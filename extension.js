@@ -3,7 +3,7 @@
 const vscode = require('vscode');
 
 const CONFIG_SECTION_CTK = 'ctk'; // The configuration section identifier
-const CTK_RULE_SET_KEY = 'ruleSet';   // The key for the ruleSet *within* the CONFIG_SECTION_CTK
+const CTK_RULE_SET_KEY = 'ruleSet';	 // The key for the ruleSet *within* the CONFIG_SECTION_CTK
 const GEMINI_CODE_ASSIST_RULES_KEY = 'geminicodeassist.rules';
 // For geminicodeassist.rules, since it's defined as a root property in package.json,
 // we use getConfiguration() without a section or getConfiguration(null)
@@ -13,7 +13,6 @@ const GEMINI_CODE_ASSIST_RULES_KEY = 'geminicodeassist.rules';
  * @typedef {object} Rule
  * @property {number} id
  * @property {string} key
- * @property {string} value
  */
 
 // --- Helper Functions ---
@@ -23,7 +22,7 @@ const GEMINI_CODE_ASSIST_RULES_KEY = 'geminicodeassist.rules';
  * @returns {boolean} True if a workspace is open, false otherwise.
  */
 function isWorkspaceOpen() {
-    return !!(vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0);
+		return !!(vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0);
 }
 
 /**
@@ -32,20 +31,20 @@ function isWorkspaceOpen() {
  * @returns {Rule[]} The current set of rules from the specified scope.
  */
 function getCtkRuleSet(scope) {
-    const config = vscode.workspace.getConfiguration(CONFIG_SECTION_CTK);
-    const inspection = config.inspect(CTK_RULE_SET_KEY);
+		const config = vscode.workspace.getConfiguration(CONFIG_SECTION_CTK);
+		const inspection = config.inspect(CTK_RULE_SET_KEY);
 
-    let rulesToConsider;
-    if (scope === vscode.ConfigurationTarget.Global) {
-        rulesToConsider = inspection?.globalValue;
-    } else if (scope === vscode.ConfigurationTarget.Workspace && isWorkspaceOpen()) {
-        rulesToConsider = inspection?.workspaceValue;
-    } else {
-        // For WorkspaceFolder or if workspace not open for Workspace scope
-        // or an unsupported scope, return empty.
-        return [];
-    }
-    return Array.isArray(rulesToConsider) ? rulesToConsider : [];
+		let rulesToConsider;
+		if (scope === vscode.ConfigurationTarget.Global) {
+				rulesToConsider = inspection?.globalValue;
+		} else if (scope === vscode.ConfigurationTarget.Workspace && isWorkspaceOpen()) {
+				rulesToConsider = inspection?.workspaceValue;
+		} else {
+				// For WorkspaceFolder or if workspace not open for Workspace scope
+				// or an unsupported scope, return empty.
+				return [];
+		}
+		return Array.isArray(rulesToConsider) ? rulesToConsider : [];
 }
 
 /**
@@ -54,465 +53,655 @@ function getCtkRuleSet(scope) {
  * @param {vscode.ConfigurationTarget} scope The configuration scope to update.
  */
 async function updateCtkRuleSet(rules, scope) {
-    if (scope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
-        vscode.window.showErrorMessage("CTK GEE: Cannot update workspace rules as no workspace is open.");
-        return;
-    }
-    const config = vscode.workspace.getConfiguration(CONFIG_SECTION_CTK);
-    await config.update(CTK_RULE_SET_KEY, rules, scope);
+		if (scope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
+				vscode.window.showErrorMessage("CTK GEE: Cannot update workspace rules as no workspace is open.");
+				return;
+		}
+		const config = vscode.workspace.getConfiguration(CONFIG_SECTION_CTK);
+		await config.update(CTK_RULE_SET_KEY, rules, scope);
 }
 
 /**
- * Generates the combined string for geminicodeassist.rules from the ctk.ruleSet.
- * @param {Rule[]} rules The set of rules.
- * @returns {string} The combined rules string.
+ * Retrieves the geminicodeassist.rules string from the specified configuration scope.
+ * @param {vscode.ConfigurationTarget} scope
+ * @returns {Promise<string>}
  */
-function generateGeminiRulesString(rules) {
-    if (!Array.isArray(rules) || rules.length === 0) {
-        return "";
-    }
-    // Format: key: value, separated by four newlines
-    return rules.map(rule => `${rule.key}: ${rule.value}`).join('\n\n\n\n');
-}
+async function getGeminiRulesStringFromConfig(scope) {
+		const rootConfig = vscode.workspace.getConfiguration();
+		const inspection = rootConfig.inspect(GEMINI_CODE_ASSIST_RULES_KEY);
+		let actualGeminiStringInScope = "";
 
-
-/**
- * Syncs the ctk.ruleSet to the geminicodeassist.rules setting in the specified configuration scope.
- * @param {vscode.ConfigurationTarget} scope The configuration scope to sync.
- */
-async function syncRuleSetToGeminiRules(scope) {
-    if (scope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
-        // Don't attempt to sync workspace if no workspace is open
-        return;
-    }
-
-    const ctkRules = getCtkRuleSet(scope);
-    const geminiString = generateGeminiRulesString(ctkRules);
-    const rootConfig = vscode.workspace.getConfiguration(); // For top-level settings
-
-    const scopeName = scope === vscode.ConfigurationTarget.Global ? "global" : "workspace";
-
-    try {
-        await rootConfig.update(GEMINI_CODE_ASSIST_RULES_KEY, geminiString, scope);
-        console.log(`CTK GEE: Successfully synced to ${scopeName} geminicodeassist.rules`);
-    } catch (error) {
-        vscode.window.showErrorMessage(`CTK GEE: Error syncing to ${scopeName} geminicodeassist.rules: ${error.message}`);
-        console.error(`CTK GEE: Error syncing to ${scopeName} geminicodeassist.rules:`, error);
-    }
+		if (scope === vscode.ConfigurationTarget.Global) {
+				actualGeminiStringInScope = typeof inspection?.globalValue === 'string' ? inspection.globalValue : "";
+		} else if (scope === vscode.ConfigurationTarget.Workspace && isWorkspaceOpen()) {
+				actualGeminiStringInScope = typeof inspection?.workspaceValue === 'string' ? inspection.workspaceValue : "";
+		} else if (scope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
+				// If asking for workspace but none is open, effectively it's an empty string for our purposes
+				return "";
+		}
+		return actualGeminiStringInScope;
 }
 
 /**
- * Checks for external changes to geminicodeassist.rules in the specified scope and resolves them.
- * @param {vscode.ConfigurationTarget} scope The configuration scope to check.
+ * Updates the geminicodeassist.rules string in the specified configuration scope.
+ * @param {string} newString
+ * @param {vscode.ConfigurationTarget} scope
  */
-async function checkAndResolveExternalGeminiRulesChange(scope) {
-    if (scope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
-        return;
-    }
+async function updateGeminiRulesStringInConfig(newString, scope) {
+		if (scope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
+				return;
+		}
+		const rootConfig = vscode.workspace.getConfiguration();
+		const scopeNameProper = scope === vscode.ConfigurationTarget.Global ? "Global" : "Workspace";
+		try {
+				await rootConfig.update(GEMINI_CODE_ASSIST_RULES_KEY, newString, scope);
+				console.log(`CTK GEE: Successfully updated ${scopeNameProper} geminicodeassist.rules`);
+		} catch (error) {
+				vscode.window.showErrorMessage(`CTK GEE: Error updating ${scopeNameProper} geminicodeassist.rules: ${error.message}`);
+				console.error(`CTK GEE: Error updating ${scopeNameProper} geminicodeassist.rules:`, error);
+		}
+}
 
-    const ctkRules = getCtkRuleSet(scope);
-    const expectedGeminiString = generateGeminiRulesString(ctkRules);
+/**
+ * Parses the geminicodeassist.rules string.
+ * @param {string} rulesString
+ * @returns {{orderedKeyValues: {key: string, value: string}[], valueMap: Map<string, string>}}
+ */
+function parseGeminiRulesString(rulesString) {
+		const orderedKeyValues = [];
+		const valueMap = new Map();
+		if (typeof rulesString !== 'string' || rulesString.trim() === "") {
+				return { orderedKeyValues, valueMap };
+		}
 
-    const rootConfig = vscode.workspace.getConfiguration();
-    const inspection = rootConfig.inspect(GEMINI_CODE_ASSIST_RULES_KEY);
+		const ruleEntries = rulesString.split(/\n\n\n\n/);
+		for (const entry of ruleEntries) {
+				if (entry.trim() === "") continue;
+				const colonIndex = entry.indexOf(':');
+				if (colonIndex > 0) { // Ensure colon is present and not the first character
+						const key = entry.substring(0, colonIndex).trim();
+						const value = entry.substring(colonIndex + 1).trimStart(); // trimStart to preserve leading spaces in value if intended
+						if (key) { // Ensure key is not empty
+								orderedKeyValues.push({ key, value });
+								valueMap.set(key, value);
+						}
+				} else {
+						// Handle entries without a colon as a key with an empty value
+						const key = entry.trim();
+						if (key) {
+								orderedKeyValues.push({ key, value: "" });
+								valueMap.set(key, "");
+								console.warn(`CTK GEE: Rule entry "${key}" in geminicodeassist.rules has no value. Treating as empty value.`);
+						}
+				}
+		}
+		return { orderedKeyValues, valueMap };
+}
 
-    let actualGeminiStringInScope;
-    const scopeName = scope === vscode.ConfigurationTarget.Global ? "Global" : "Workspace";
-
-    if (scope === vscode.ConfigurationTarget.Global) {
-        actualGeminiStringInScope = typeof inspection?.globalValue === 'string' ? inspection.globalValue : "";
-    } else if (scope === vscode.ConfigurationTarget.Workspace) {
-        actualGeminiStringInScope = typeof inspection?.workspaceValue === 'string' ? inspection.workspaceValue : "";
-    } else {
-        return; // Should not happen for Global/Workspace
-    }
-
-    if (actualGeminiStringInScope !== expectedGeminiString) {
-        const choice = await vscode.window.showWarningMessage(
-            `CTK GEE: ${scopeName} 'geminicodeassist.rules' was modified externally. This extension manages this setting based on the ${scopeName} 'ctk.ruleSet'.`,
-            { modal: true },
-            `Overwrite with ${scopeName} ctk.ruleSet content`,
-            "Keep external changes (not recommended)"
-        );
-
-        if (choice === `Overwrite with ${scopeName} ctk.ruleSet content`) {
-            await rootConfig.update(GEMINI_CODE_ASSIST_RULES_KEY, expectedGeminiString, scope);
-            vscode.window.showInformationMessage(`CTK GEE: Re-synced ${scopeName} geminicodeassist.rules from ${scopeName} ctk.ruleSet.`);
-        }
-    }
+/**
+ * Builds the geminicodeassist.rules string from ordered key-value pairs.
+ * @param {{key: string, value: string}[]} orderedKeyValues
+ * @returns {string}
+ */
+function buildGeminiRulesString(orderedKeyValues) {
+		if (!Array.isArray(orderedKeyValues) || orderedKeyValues.length === 0) {
+				return "";
+		}
+		return orderedKeyValues.map(kv => `${kv.key}: ${kv.value}`).join('\n\n\n\n');
 }
 
 /**
  * Handles initial import of existing global geminicodeassist.rules content.
- * This is designed to run once or if ctk.ruleSet is empty.
+ * Populates ctk.ruleSet with keys and IDs. Values remain in geminicodeassist.rules.
  */
 async function performInitialGlobalImport() {
-    let ctkRules = getCtkRuleSet(vscode.ConfigurationTarget.Global);
+		let ctkRules = getCtkRuleSet(vscode.ConfigurationTarget.Global);
 
-    // Only attempt import if ctk.ruleSet is currently empty
-    if (ctkRules.length === 0) {
-        const rootConfig = vscode.workspace.getConfiguration();
-        const inspection = rootConfig.inspect(GEMINI_CODE_ASSIST_RULES_KEY);
-        const globalValue = inspection?.globalValue;
+		// Only attempt import if ctk.ruleSet is currently empty
+		if (ctkRules.length === 0) {
+				const rootConfig = vscode.workspace.getConfiguration();
+				const geminiString = await getGeminiRulesStringFromConfig(vscode.ConfigurationTarget.Global);
+				const { orderedKeyValues } = parseGeminiRulesString(geminiString);
 
-        if (globalValue && typeof globalValue === 'string' && globalValue.trim() !== "") {
-            const userChoice = await vscode.window.showInformationMessage(
-                `CTK GEE: Found existing content in global 'geminicodeassist.rules'. Would you like to import it as the first rule (ID: 1) into 'ctk.ruleSet'?`,
-                { modal: true },
-                "Yes, import it",
-                "No, start fresh"
-            );
+				if (orderedKeyValues.length > 0) {
+						const userChoice = await vscode.window.showInformationMessage(
+								`CTK GEE: Found existing content in global 'geminicodeassist.rules'. Would you like to import its keys into 'ctk.ruleSet'? (Values remain in geminicodeassist.rules)`,
+								{ modal: true },
+								"Yes, import keys",
+								"No, start fresh"
+						);
 
-            if (userChoice === "Yes, import it") {
-                ctkRules.push({
-                    id: 1, // Assigning ID 1 as requested for the inherited/imported rule
-                    key: "Imported Global Rule", // Default key, user can edit later
-                    value: globalValue
-                });
-                await updateCtkRuleSet(ctkRules, vscode.ConfigurationTarget.Global);
-                vscode.window.showInformationMessage("CTK GEE: Imported existing global geminicodeassist.rules content into ctk.ruleSet.");
-            }
-        }
-    }
+						if (userChoice === "Yes, import keys") {
+								const newCtkRules = orderedKeyValues.map((kv, index) => ({
+										id: index + 1,
+										key: kv.key
+								}));
+								// No need to update geminiString here, as it's the source.
+								// We just need to ensure the newCtkRules are clean.
+								const { cleanedCtkRules, keyRenames } = await ensureAndCleanCtkRuleSet(newCtkRules, "Global", false);
+								await updateCtkRuleSet(cleanedCtkRules, vscode.ConfigurationTarget.Global);
+
+								if (keyRenames.size > 0) { // If cleaning ctkRules changed keys, gemini.rules needs update
+										await syncRules(vscode.ConfigurationTarget.Global); // This will use cleanedCtkRules and original values
+										vscode.window.showWarningMessage("CTK GEE: Imported global keys and cleaned them. geminicodeassist.rules was updated to reflect unique keys.");
+								} else {
+										vscode.window.showInformationMessage("CTK GEE: Imported keys from global geminicodeassist.rules into ctk.ruleSet.");
+								}
+						}
+				}
+		}
 }
-
 /**
  * Handles initial import of existing workspace geminicodeassist.rules content.
  * This is designed to run once or if workspace ctk.ruleSet is empty.
  */
 async function performInitialWorkspaceImport() {
-    if (!isWorkspaceOpen()) return;
+		if (!isWorkspaceOpen()) return;
 
-    let ctkRules = getCtkRuleSet(vscode.ConfigurationTarget.Workspace);
+		let ctkRules = getCtkRuleSet(vscode.ConfigurationTarget.Workspace);
 
-    if (ctkRules.length === 0) {
-        const rootConfig = vscode.workspace.getConfiguration();
-        const inspection = rootConfig.inspect(GEMINI_CODE_ASSIST_RULES_KEY);
-        const workspaceValue = inspection?.workspaceValue; // Check workspace value
+		if (ctkRules.length === 0) {
+				const geminiString = await getGeminiRulesStringFromConfig(vscode.ConfigurationTarget.Workspace);
+				const { orderedKeyValues } = parseGeminiRulesString(geminiString);
 
-        if (workspaceValue && typeof workspaceValue === 'string' && workspaceValue.trim() !== "") {
-            const userChoice = await vscode.window.showInformationMessage(
-                `CTK GEE: Found existing content in workspace 'geminicodeassist.rules'. Would you like to import it as the first rule (ID: 1) into workspace 'ctk.ruleSet'?`,
-                { modal: true },
-                "Yes, import it",
-                "No, start fresh"
-            );
+				if (orderedKeyValues.length > 0) {
+						const userChoice = await vscode.window.showInformationMessage(
+								`CTK GEE: Found existing content in workspace 'geminicodeassist.rules'. Would you like to import its keys into workspace 'ctk.ruleSet'?`,
+								{ modal: true },
+								"Yes, import keys",
+								"No, start fresh"
+						);
 
-            if (userChoice === "Yes, import it") {
-                ctkRules.push({
-                    id: 1,
-                    key: "Imported Workspace Rule",
-                    value: workspaceValue
-                });
-                await updateCtkRuleSet(ctkRules, vscode.ConfigurationTarget.Workspace);
-                vscode.window.showInformationMessage("CTK GEE: Imported existing workspace geminicodeassist.rules content into workspace ctk.ruleSet.");
-            }
-        }
-    }
+						if (userChoice === "Yes, import keys") {
+								const newCtkRules = orderedKeyValues.map((kv, index) => ({
+										id: index + 1,
+										key: kv.key
+								}));
+								const { cleanedCtkRules, keyRenames } = await ensureAndCleanCtkRuleSet(newCtkRules, "Workspace", false);
+								await updateCtkRuleSet(cleanedCtkRules, vscode.ConfigurationTarget.Workspace);
+
+								if (keyRenames.size > 0) {
+										await syncRules(vscode.ConfigurationTarget.Workspace);
+										vscode.window.showWarningMessage("CTK GEE: Imported workspace keys and cleaned them. geminicodeassist.rules was updated.");
+								} else {
+										vscode.window.showInformationMessage("CTK GEE: Imported keys from workspace geminicodeassist.rules into workspace ctk.ruleSet.");
+								}
+						}
+				}
+		}
 }
 
 /**
- * Ensures that all rules in the given array have unique IDs and unique keys.
- * IDs will be re-assigned sequentially if duplicates or non-numeric IDs are found.
- * Duplicate keys will be modified by appending a suffix (e.g., "_duplicate_1").
- * @param {Rule[]} rules The array of rules to process.
- * @param {string} scopeNameProper User-friendly scope name (e.g., "Global", "Workspace").
- * @param {vscode.ConfigurationTarget} scope The configuration scope.
- * @returns {Promise<boolean>} True if changes were made and updated, false otherwise.
+ * Syncs ctk.ruleSet (keys and order) with geminicodeassist.rules (values).
+ * @param {vscode.ConfigurationTarget} scope
+ * @param {Map<string, string>} [keyRenames=new Map()] Optional map of oldKey -> newKey.
  */
-async function ensureUniqueIdsAndKeys(rules, scopeNameProper, scope) {
-    if (!Array.isArray(rules)) return false;
+async function syncRules(scope, keyRenames = new Map()) {
+		if (scope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) return;
 
-    let madeChanges = false;
+		const ctkRules = getCtkRuleSet(scope); // These are [{id, key}]
+		const currentGeminiString = await getGeminiRulesStringFromConfig(scope);
+		const { valueMap: currentGeminiValueMap } = parseGeminiRulesString(currentGeminiString);
 
-    // 1. Ensure unique and sequential IDs
-    const idSet = new Set();
-    let maxId = 0;
-    let reassignIds = false;
+		const newOrderedKeyValues = ctkRules.map(ctkRule => {
+				let valueToUse = currentGeminiValueMap.get(ctkRule.key);
 
-    for (const rule of rules) {
-        if (typeof rule.id !== 'number' || idSet.has(rule.id) || rule.id <= 0) {
-            reassignIds = true;
-            break;
-        }
-        idSet.add(rule.id);
-        if (rule.id > maxId) maxId = rule.id;
-    }
+				// If ctkRule.key might be a renamed key, try to find its original value
+				if (valueToUse === undefined) {
+						for (const [originalKey, renamedKey] of keyRenames.entries()) {
+								if (renamedKey === ctkRule.key) {
+										valueToUse = currentGeminiValueMap.get(originalKey);
+										break;
+								}
+						}
+				}
+				return { key: ctkRule.key, value: valueToUse || "" }; // Default to empty string if no value found
+		});
 
-    if (reassignIds) {
-        madeChanges = true;
-        console.warn(`CTK GEE: Re-assigning IDs for ${scopeNameProper} rules due to duplicates, non-numeric, or non-positive values.`);
-        rules.forEach((rule, index) => {
-            rule.id = index + 1;
-        });
-    }
+		const newGeminiString = buildGeminiRulesString(newOrderedKeyValues);
 
-    // 2. Ensure unique keys
-    const keyCounts = new Map();
-    const originalKeysToNewKeys = new Map(); // To handle multiple duplicates of the same original key
+		if (newGeminiString !== currentGeminiString) {
+				await updateGeminiRulesStringInConfig(newGeminiString, scope);
+				console.log(`CTK GEE: Synced rules for ${scope === vscode.ConfigurationTarget.Global ? "Global" : "Workspace"} scope.`);
+		}
+}
 
-    for (const rule of rules) {
-        let currentKey = rule.key;
-        let count = keyCounts.get(currentKey) || 0;
+/**
+ * Reconciles ctk.ruleSet with external changes in geminicodeassist.rules.
+ * @param {vscode.ConfigurationTarget} scope
+ */
+async function reconcileCtkWithExternalGeminiChange(scope) {
+		if (scope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) return;
 
-        if (count > 0) { // This key is a duplicate
-            madeChanges = true;
-            let newKey;
-            let duplicateIndex = originalKeysToNewKeys.get(currentKey) || 0;
-            do {
-                duplicateIndex++;
-                newKey = `${currentKey}_duplicate_${duplicateIndex}`;
-            } while (keyCounts.has(newKey)); // Ensure the new suffixed key is also unique
-            originalKeysToNewKeys.set(currentKey, duplicateIndex);
-            console.warn(`CTK GEE: Modifying duplicate key "${currentKey}" to "${newKey}" in ${scopeNameProper} rules.`);
-            rule.key = newKey;
-            keyCounts.set(newKey, 1); // Add the new unique key
-        } else {
-            keyCounts.set(currentKey, 1);
-        }
-    }
+		const scopeNameProper = scope === vscode.ConfigurationTarget.Global ? "Global" : "Workspace";
+		const geminiString = await getGeminiRulesStringFromConfig(scope);
+		const { orderedKeyValues: geminiKeyValues, valueMap: geminiValueMap } = parseGeminiRulesString(geminiString);
+		let currentCtkRules = getCtkRuleSet(scope);
 
-    if (madeChanges) {
-        await updateCtkRuleSet(rules, scope);
-        vscode.window.showWarningMessage(`CTK GEE: Rules in ${scopeNameProper} settings were adjusted to ensure unique IDs and/or keys. Please review them if necessary.`);
-        return true;
-    }
-    return false;
+		// Construct what gemini.rules *should* look like based on current ctk.ruleSet and current gemini values
+		const ctkDerivedGeminiString = buildGeminiRulesString(
+				currentCtkRules.map(r => ({ key: r.key, value: geminiValueMap.get(r.key) || "" }))
+		);
+
+		if (ctkDerivedGeminiString === geminiString) {
+				console.log(`CTK GEE: ${scopeNameProper} geminicodeassist.rules matches ctk.ruleSet derived content. No reconciliation needed.`);
+				return;
+		}
+
+		const choice = await vscode.window.showWarningMessage(
+				`CTK GEE: ${scopeNameProper} 'geminicodeassist.rules' appears to have been modified externally or is out of sync.`,
+				{ modal: true },
+				`Update ${scopeNameProper} ctk.ruleSet from geminicodeassist.rules`,
+				`Overwrite ${scopeNameProper} geminicodeassist.rules with ctk.ruleSet content`
+		);
+
+		if (choice === `Update ${scopeNameProper} ctk.ruleSet from geminicodeassist.rules`) {
+				let nextId = currentCtkRules.length > 0 ? Math.max(0, ...currentCtkRules.map(r => r.id)) + 1 : 1;
+				const newCtkRules = geminiKeyValues.map(kv => {
+						const existingRule = currentCtkRules.find(r => r.key === kv.key);
+						return { id: existingRule ? existingRule.id : nextId++, key: kv.key };
+				});
+
+				const { cleanedCtkRules, keyRenames } = await ensureAndCleanCtkRuleSet(newCtkRules, scopeNameProper, false);
+				await updateCtkRuleSet(cleanedCtkRules, scope);
+
+				if (keyRenames.size > 0) { // Duplicates in gemini.rules forced key changes in ctk.ruleSet
+						const finalGeminiValues = new Map(geminiKeyValues.map(item => [item.key, item.value])); // Use original values from geminiString
+						const correctedOrderedKeyValues = cleanedCtkRules.map(ctkRule => {
+								let valueToUse, originalKeyForValue = ctkRule.key;
+								 for (const [originalInputKey, newlyCleanedKey] of keyRenames.entries()) { // Find original key if ctkRule.key was renamed
+										if (newlyCleanedKey === ctkRule.key) { originalKeyForValue = originalInputKey; break; }
+								}
+								valueToUse = finalGeminiValues.get(originalKeyForValue);
+								return { key: ctkRule.key, value: valueToUse || "" };
+						});
+						await updateGeminiRulesStringInConfig(buildGeminiRulesString(correctedOrderedKeyValues), scope);
+						vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} ctk.ruleSet and geminicodeassist.rules updated and cleaned from external changes.`);
+				} else {
+						vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} ctk.ruleSet updated from geminicodeassist.rules.`);
+				}
+		} else if (choice === `Overwrite ${scopeNameProper} geminicodeassist.rules with ctk.ruleSet content`) {
+				await syncRules(scope); // This will use current ctk.ruleSet to rebuild gemini.rules
+				vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} geminicodeassist.rules overwritten by ctk.ruleSet content.`);
+		}
+}
+
+/**
+ * Ensures unique IDs and keys in a ctk.ruleSet array.
+ * @param {Rule[]} ctkRulesArray The array of ctk rules ({id, key}) to process.
+ * @param {string} scopeNameProper User-friendly scope name (e.g., "Global", "Workspace").
+ * @param {boolean} [showMessage=true] Whether to show a warning message.
+ * @returns {Promise<{cleanedCtkRules: Rule[], keyRenames: Map<string, string>, madeChanges: boolean}>}
+ */
+async function ensureAndCleanCtkRuleSet(ctkRulesArray, scopeNameProper, showMessage = true) {
+		if (!Array.isArray(ctkRulesArray)) return { cleanedCtkRules: [], keyRenames: new Map(), madeChanges: false };
+
+		const rules = JSON.parse(JSON.stringify(ctkRulesArray)); // Deep copy
+		let madeChanges = false;
+		const keyRenames = new Map(); // Map<originalKey, newKey>
+
+		// 1. Ensure unique and sequential IDs
+		const idSet = new Set();
+		let reassignIds = false;
+		for (const rule of rules) {
+				if (typeof rule.id !== 'number' || idSet.has(rule.id) || rule.id <= 0) {
+						reassignIds = true;
+						break;
+				}
+				idSet.add(rule.id);
+		}
+
+		if (reassignIds) {
+				madeChanges = true;
+				console.warn(`CTK GEE: Re-assigning IDs for ${scopeNameProper} ctk.ruleSet.`);
+				rules.forEach((rule, index) => {
+						rule.id = index + 1;
+				});
+		}
+
+		// 2. Ensure unique keys in ctk.ruleSet
+		const finalKeySet = new Set(); // Tracks keys already processed and finalized
+
+		for (const rule of rules) {
+				const originalRuleKey = rule.key; // Keep track of the key as it was when this rule was first encountered in this loop
+				let currentKey = rule.key;
+				let occurrences = 0;
+				// Count occurrences of this key *before* potential renaming
+				for(const r of rules) {
+						if (r.key === currentKey) occurrences++;
+				}
+				
+				if (finalKeySet.has(currentKey) || occurrences > 1) { // If it's a duplicate among remaining rules or conflicts with an already processed one
+						madeChanges = true;
+						let newKey;
+						let duplicateIndex = 0;
+						// Find a unique name based on the original key to avoid long chains like key_dup_1_dup_1
+						const baseKeyForDuplicates = originalRuleKey; 
+						do {
+								duplicateIndex++;
+								newKey = `${baseKeyForDuplicates}_duplicate_${duplicateIndex}`;
+						} while (rules.some(r => r.key === newKey && r !== rule) || finalKeySet.has(newKey) ); // Check against other rules and already finalized keys
+						
+						console.warn(`CTK GEE: Modifying duplicate key "${currentKey}" to "${newKey}" in ${scopeNameProper} ctk.ruleSet.`);
+						rule.key = newKey;
+						if (originalRuleKey !== newKey) {
+								 // If originalRuleKey was already a renamed key, we need to trace back
+								let ultimateOriginalKey = originalRuleKey;
+								for(const [o, n] of keyRenames.entries()){
+										if(n === originalRuleKey) {
+												ultimateOriginalKey = o;
+												break;
+										}
+								}
+								keyRenames.set(ultimateOriginalKey, newKey);
+						}
+				}
+				finalKeySet.add(rule.key);
+		}
+
+		if (madeChanges && showMessage) {
+				vscode.window.showWarningMessage(`CTK GEE: Rules in ${scopeNameProper} ctk.ruleSet were adjusted to ensure unique IDs and/or keys. Review if necessary.`);
+		}
+		return { cleanedCtkRules: rules, keyRenames, madeChanges };
 }
 
 /**
  * @param {vscode.ExtensionContext} context
  */
 async function activate(context) {
-    console.log('CTK GEE: Extension "ctk" is now active!');
+		console.log('CTK GEE: Extension "ctk" is now active!');
 
-    try {
-        console.log('CTK GEE: Performing initial imports and syncs...');
-        await performInitialGlobalImport();
-        let globalRules = getCtkRuleSet(vscode.ConfigurationTarget.Global);
-        await ensureUniqueIdsAndKeys(globalRules, "Global", vscode.ConfigurationTarget.Global);
+		try {
+				console.log('CTK GEE: Performing initial imports and data cleaning...');
+				await performInitialGlobalImport();
+				let { cleanedCtkRules: globalClean, keyRenames: globalKeyRenames } = await ensureAndCleanCtkRuleSet(getCtkRuleSet(vscode.ConfigurationTarget.Global), "Global");
+				await updateCtkRuleSet(globalClean, vscode.ConfigurationTarget.Global);
+				await syncRules(vscode.ConfigurationTarget.Global, globalKeyRenames);
 
-        if (isWorkspaceOpen()) {
-            await performInitialWorkspaceImport();
-            let workspaceRules = getCtkRuleSet(vscode.ConfigurationTarget.Workspace);
-            await ensureUniqueIdsAndKeys(workspaceRules, "Workspace", vscode.ConfigurationTarget.Workspace);
-        }
+				if (isWorkspaceOpen()) {
+						await performInitialWorkspaceImport();
+						let { cleanedCtkRules: wsClean, keyRenames: wsKeyRenames } = await ensureAndCleanCtkRuleSet(getCtkRuleSet(vscode.ConfigurationTarget.Workspace), "Workspace");
+						await updateCtkRuleSet(wsClean, vscode.ConfigurationTarget.Workspace);
+						await syncRules(vscode.ConfigurationTarget.Workspace, wsKeyRenames);
+				}
+				console.log('CTK GEE: Initial setup completed.');
 
-        // Re-fetch rules after potential modifications by ensureUniqueIdsAndKeys before syncing
-        globalRules = getCtkRuleSet(vscode.ConfigurationTarget.Global);
-        await syncRuleSetToGeminiRules(vscode.ConfigurationTarget.Global);
+		} catch (error) {
+				console.error("CTK GEE: Error during initial setup (imports/syncs):", error);
+				vscode.window.showErrorMessage("CTK GEE: Error during initial setup. Some features might be affected. Check Developer Tools Console (Help > Toggle Developer Tools).");
+		}
 
-        if (isWorkspaceOpen()) {
-            let workspaceRules = getCtkRuleSet(vscode.ConfigurationTarget.Workspace);
-            await syncRuleSetToGeminiRules(vscode.ConfigurationTarget.Workspace);
-        }
-        console.log('CTK GEE: Initial imports and syncs completed.');
+		// --- Register Commands ---
+		try {
+				console.log('CTK GEE: Registering commands...');
+				// Helper to register CRUD commands for a given scope
+				const registerCrudCommandsForScope = (scope, scopeNameProper, commandSuffix) => {
+						const targetScope = scope;
 
-    } catch (error) {
-        console.error("CTK GEE: Error during initial setup (imports/syncs):", error);
-        vscode.window.showErrorMessage("CTK GEE: Error during initial setup. Some features might be affected. Check Developer Tools Console (Help > Toggle Developer Tools).");
-    }
+						// Add Rule Command
+						context.subscriptions.push(vscode.commands.registerCommand(`ctk.add${commandSuffix}Rule`, async () => {
+								if (targetScope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
+										vscode.window.showInformationMessage(`CTK GEE: A workspace must be open to add a ${scopeNameProper} rule.`);
+										return;
+								}
 
-    // --- Register Commands ---
-    try {
-        console.log('CTK GEE: Registering commands...');
-        // Helper to register CRUD commands for a given scope
-        const registerCrudCommandsForScope = (scope, scopeNameProper, commandSuffix) => {
-            const targetScope = scope; // vscode.ConfigurationTarget.Global or vscode.ConfigurationTarget.Workspace
+								const keyInput = await vscode.window.showInputBox({
+										prompt: `Enter the rule key for ${scopeNameProper} settings`,
+										validateInput: text => text && text.trim() !== "" ? null : "Key cannot be empty."
+								});
+								if (keyInput === undefined) return;
+								const key = keyInput.trim();
 
-            // Add Rule Command
-            context.subscriptions.push(vscode.commands.registerCommand(`ctk.add${commandSuffix}Rule`, async () => {
-                if (targetScope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
-                    vscode.window.showInformationMessage(`CTK GEE: A workspace must be open to add a ${scopeNameProper} rule.`);
-                    return;
-                }
+								let ctkRules = getCtkRuleSet(targetScope);
+								if (ctkRules.some(r => r.key === key)) {
+										vscode.window.showErrorMessage(`CTK GEE: A rule with key "${key}" already exists in ${scopeNameProper} ctk.ruleSet. Keys must be unique.`);
+										return;
+								}
 
-            const keyInput = await vscode.window.showInputBox({ 
-                prompt: `Enter the rule key for ${scopeNameProper} settings`, 
-                validateInput: text => text && text.trim() !== "" ? null : "Key cannot be empty." 
-            });
-            if (keyInput === undefined) return; // User cancelled
-            const key = keyInput.trim();
+								const value = await vscode.window.showInputBox({ prompt: `Enter the rule value for ${scopeNameProper} settings`, validateInput: text => text !== undefined ? null : "Value cannot be null (can be empty string)." });
+								if (value === undefined) return; // User cancelled
 
-            let rules = getCtkRuleSet(targetScope);
-            if (rules.some(r => r.key === key)) {
-                vscode.window.showErrorMessage(`CTK GEE: A rule with key "${key}" already exists in ${scopeNameProper} settings. Keys must be unique.`);
-                return;
-            }
+								// Update ctk.ruleSet
+								const newId = ctkRules.length > 0 ? Math.max(0, ...ctkRules.map(r => r.id)) + 1 : 1;
+								ctkRules.push({ id: newId, key: key });
+								await updateCtkRuleSet(ctkRules, targetScope);
 
-            const value = await vscode.window.showInputBox({ prompt: `Enter the rule value for ${scopeNameProper} settings`, validateInput: text => text && text.trim() !== "" ? null : "Value cannot be empty." });
-            if (key === undefined) return; // User cancelled
-            const newId = rules.length > 0 ? Math.max(0, ...rules.map(r => r.id)) + 1 : 1;
-            rules.push({ id: newId, key: key.trim(), value: value.trim() });
-                await updateCtkRuleSet(rules, targetScope);
-                vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} Rule ID ${newId} added.`);
-                // Sync will happen via onDidChangeConfiguration or user can force it
-            }));
+								// Update geminicodeassist.rules
+								const currentGeminiString = await getGeminiRulesStringFromConfig(targetScope);
+								const { orderedKeyValues } = parseGeminiRulesString(currentGeminiString);
+								orderedKeyValues.push({ key, value }); // Add new rule at the end
+								const newGeminiString = buildGeminiRulesString(orderedKeyValues);
+								await updateGeminiRulesStringInConfig(newGeminiString, targetScope);
 
-            // View Rules Command
-            context.subscriptions.push(vscode.commands.registerCommand(`ctk.view${commandSuffix}Rules`, () => {
-                if (targetScope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
-                    vscode.window.showInformationMessage(`CTK GEE: A workspace must be open to view ${scopeNameProper} rules.`);
-                    return;
-                }
-                const rules = getCtkRuleSet(targetScope);
-            if (rules.length === 0) {
-                    vscode.window.showInformationMessage(`CTK GEE: No rules configured in ${scopeNameProper} ctk.ruleSet.`);
-                return;
-            }
-            const ruleDisplay = rules.map(r => `ID: ${r.id}\nKey: ${r.key}\nValue: ${r.value}`).join('\n----------\n');
-                vscode.window.showInformationMessage(`CTK GEE: Current ${scopeNameProper} Rules (see Output > CTK GEE for all):`);
-                console.log(`--- CTK GEE: Current ${scopeNameProper} Rules ---`);
-            rules.forEach(r => console.log(`ID: ${r.id}, Key: ${r.key}, Value: ${r.value}`));
-            console.log("-----------------------------");
-            // Or open a new document with the rules
-            vscode.workspace.openTextDocument({ content: ruleDisplay, language: 'text' })
-                .then(doc => vscode.window.showTextDocument(doc));
-        }));
+								vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} Rule ID ${newId} (Key: ${key}) added.`);
+						}));
 
-            // Edit Rule Command
-            context.subscriptions.push(vscode.commands.registerCommand(`ctk.edit${commandSuffix}Rule`, async () => {
-                if (targetScope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
-                    vscode.window.showInformationMessage(`CTK GEE: A workspace must be open to edit a ${scopeNameProper} rule.`);
-                    return;
-                }
-                let rules = getCtkRuleSet(targetScope);
-            if (rules.length === 0) {
-                    vscode.window.showInformationMessage(`CTK GEE: No ${scopeNameProper} rules to edit.`);
-                return;
-            }
+						// View Rules Command
+						context.subscriptions.push(vscode.commands.registerCommand(`ctk.view${commandSuffix}Rules`, async () => {
+								if (targetScope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
+										vscode.window.showInformationMessage(`CTK GEE: A workspace must be open to view ${scopeNameProper} rules.`);
+										return;
+								}
+								const ctkRules = getCtkRuleSet(targetScope);
+								if (ctkRules.length === 0) {
+										vscode.window.showInformationMessage(`CTK GEE: No rules configured in ${scopeNameProper} ctk.ruleSet.`);
+										return;
+								}
 
-            const ruleItems = rules.map(r => ({ label: `ID ${r.id}: ${r.key}`, description: r.value.substring(0, 50) + (r.value.length > 50 ? '...' : ''), ruleId: r.id }));
-                const selectedItem = await vscode.window.showQuickPick(ruleItems, { placeHolder: `Select a ${scopeNameProper} rule to edit` });
+								const geminiString = await getGeminiRulesStringFromConfig(targetScope);
+								const { valueMap } = parseGeminiRulesString(geminiString);
 
-            if (!selectedItem) return; // User cancelled
+								const ruleDisplayItems = ctkRules.map(r => {
+										const val = valueMap.get(r.key) || "[Value not found in geminicodeassist.rules]";
+										return `ID: ${r.id}\nKey: ${r.key}\nValue: ${val}`;
+								});
 
-            const ruleToEdit = rules.find(r => r.id === selectedItem.ruleId);
-            if (!ruleToEdit) {
-                    vscode.window.showErrorMessage(`CTK GEE: Selected ${scopeNameProper} rule not found.`);
-                return;
-            }
+								const ruleDisplay = ruleDisplayItems.join('\n----------\n');
+								vscode.window.showInformationMessage(`CTK GEE: Current ${scopeNameProper} Rules (see Output > CTK GEE for all):`);
+								console.log(`--- CTK GEE: Current ${scopeNameProper} Rules ---`);
+								ctkRules.forEach(r => console.log(`ID: ${r.id}, Key: ${r.key}, Value: ${valueMap.get(r.key) || "[N/A]"}`));
+								console.log("-----------------------------");
+								vscode.workspace.openTextDocument({ content: ruleDisplay, language: 'text' })
+										.then(doc => vscode.window.showTextDocument(doc));
+						}));
 
-            const newKey = await vscode.window.showInputBox({
-                prompt: `Enter the new rule key for ${scopeNameProper} (Original: ${ruleToEdit.key})`,
-                value: ruleToEdit.key,
-                validateInput: text => text && text.trim() !== "" ? null : "Key cannot be empty."
-            });
-            if (newKey === undefined) return; // User cancelled
-            const trimmedNewKey = newKey.trim();
+						// Edit Rule Command
+						context.subscriptions.push(vscode.commands.registerCommand(`ctk.edit${commandSuffix}Rule`, async () => {
+								if (targetScope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
+										vscode.window.showInformationMessage(`CTK GEE: A workspace must be open to edit a ${scopeNameProper} rule.`);
+										return;
+								}
+								let ctkRules = getCtkRuleSet(targetScope);
+								if (ctkRules.length === 0) {
+										vscode.window.showInformationMessage(`CTK GEE: No ${scopeNameProper} rules to edit.`);
+										return;
+								}
 
-            // Check for key uniqueness (excluding the current rule being edited if its key hasn't changed)
-            if (trimmedNewKey !== ruleToEdit.key && rules.some(r => r.id !== ruleToEdit.id && r.key === trimmedNewKey)) {
-                vscode.window.showErrorMessage(`CTK GEE: A rule with key "${trimmedNewKey}" already exists in ${scopeNameProper} settings. Keys must be unique.`);
-                return;
-            }
+								const geminiString = await getGeminiRulesStringFromConfig(targetScope);
+								const { valueMap: currentValuesMap } = parseGeminiRulesString(geminiString);
 
-            const newValue = await vscode.window.showInputBox({
-                prompt: `Enter the new rule value for ${scopeNameProper} (Original Value: ${ruleToEdit.value.substring(0,50)}...)`,
-                value: ruleToEdit.value,
-                validateInput: text => text && text.trim() !== "" ? null : "Value cannot be empty."
-            });
-            if (newValue === undefined) return;
+								const ruleItems = ctkRules.map(r => ({
+										label: `ID ${r.id}: ${r.key}`,
+										description: (currentValuesMap.get(r.key) || "").substring(0, 50) + ((currentValuesMap.get(r.key) || "").length > 50 ? '...' : ''),
+										ruleId: r.id,
+										originalKey: r.key // Store original key for lookup
+								}));
+								const selectedItem = await vscode.window.showQuickPick(ruleItems, { placeHolder: `Select a ${scopeNameProper} rule to edit` });
 
-            ruleToEdit.key = newKey.trim();
-            ruleToEdit.value = newValue.trim();
-                await updateCtkRuleSet(rules, targetScope);
-                vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} Rule ID ${ruleToEdit.id} updated.`);
-            }));
+						if (!selectedItem) return; // User cancelled
 
-            // Delete Rule Command
-            context.subscriptions.push(vscode.commands.registerCommand(`ctk.delete${commandSuffix}Rule`, async () => {
-                if (targetScope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
-                    vscode.window.showInformationMessage(`CTK GEE: A workspace must be open to delete a ${scopeNameProper} rule.`);
-                    return;
-                }
-                let rules = getCtkRuleSet(targetScope);
-            if (rules.length === 0) {
-                    vscode.window.showInformationMessage(`CTK GEE: No ${scopeNameProper} rules to delete.`);
-                return;
-            }
+						const ruleToEdit = ctkRules.find(r => r.id === selectedItem.ruleId);
+						if (!ruleToEdit) {
+										vscode.window.showErrorMessage(`CTK GEE: Selected ${scopeNameProper} rule not found.`);
+								return;
+						}
+						const originalKey = ruleToEdit.key;
+						const originalValue = currentValuesMap.get(originalKey) || "";
 
-            const ruleItems = rules.map(r => ({ label: `ID ${r.id}: ${r.key}`, description: r.value.substring(0, 50) + (r.value.length > 50 ? '...' : ''), ruleId: r.id }));
-                const selectedItem = await vscode.window.showQuickPick(ruleItems, { placeHolder: `Select a ${scopeNameProper} rule to delete` });
+						const newKeyInput = await vscode.window.showInputBox({
+								prompt: `Enter the new rule key for ${scopeNameProper} (Original: ${originalKey})`,
+								value: originalKey,
+								validateInput: text => text && text.trim() !== "" ? null : "Key cannot be empty."
+						});
+						if (newKeyInput === undefined) return;
+						const newKey = newKeyInput.trim();
 
-            if (!selectedItem) return; // User cancelled
+						// Check for key uniqueness (excluding the current rule being edited if its key hasn't changed)
+						if (newKey !== originalKey && ctkRules.some(r => r.id !== ruleToEdit.id && r.key === newKey)) {
+								vscode.window.showErrorMessage(`CTK GEE: A rule with key "${newKey}" already exists in ${scopeNameProper} ctk.ruleSet. Keys must be unique.`);
+								return;
+						}
 
-                const confirm = await vscode.window.showWarningMessage(`Are you sure you want to delete ${scopeNameProper} rule ID ${selectedItem.ruleId} ("${selectedItem.label}")?`, { modal: true }, "Yes, delete it");
-            if (confirm !== "Yes, delete it") return;
+						const newValue = await vscode.window.showInputBox({
+								prompt: `Enter the new rule value for ${scopeNameProper} (Original Value: ${originalValue.substring(0, 50)}...)`,
+								value: originalValue,
+								validateInput: text => text !== undefined ? null : "Value cannot be null."
+						});
+						if (newValue === undefined) return;
 
-            const updatedRules = rules.filter(r => r.id !== selectedItem.ruleId);
-                await updateCtkRuleSet(updatedRules, targetScope);
-                vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} Rule ID ${selectedItem.ruleId} deleted.`);
-            }));
+						// Update ctk.ruleSet
+						ruleToEdit.key = newKey;
+						await updateCtkRuleSet(ctkRules, targetScope);
 
-            // Force Sync Command
-            context.subscriptions.push(vscode.commands.registerCommand(`ctk.forceSync${commandSuffix}Rules`, async () => {
-                if (targetScope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
-                    vscode.window.showInformationMessage(`CTK GEE: A workspace must be open to sync ${scopeNameProper} rules.`);
-                    return;
-                }
-                await syncRuleSetToGeminiRules(targetScope);
-                vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} rules manually synced to ${scopeNameProper} geminicodeassist.rules.`);
-            }));
-        };
+						// Update geminicodeassist.rules
+						const { orderedKeyValues } = parseGeminiRulesString(await getGeminiRulesStringFromConfig(targetScope)); // Re-fetch to be safe
+						const updatedOrderedKeyValues = orderedKeyValues.map(kv => {
+								if (kv.key === originalKey) { // Find by original key
+										return { key: newKey, value: newValue };
+								}
+								return kv;
+						});
+						const newGeminiString = buildGeminiRulesString(updatedOrderedKeyValues);
+						await updateGeminiRulesStringInConfig(newGeminiString, targetScope);
 
-        // Register commands for Global scope
-        registerCrudCommandsForScope(vscode.ConfigurationTarget.Global, "Global", "Global");
+						vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} Rule ID ${ruleToEdit.id} updated.`);
+						}));
 
-        // Register commands for Workspace scope
-        registerCrudCommandsForScope(vscode.ConfigurationTarget.Workspace, "Workspace", "Workspace");
-        console.log('CTK GEE: All commands registered.');
+						// Delete Rule Command
+						context.subscriptions.push(vscode.commands.registerCommand(`ctk.delete${commandSuffix}Rule`, async () => {
+								if (targetScope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
+										vscode.window.showInformationMessage(`CTK GEE: A workspace must be open to delete a ${scopeNameProper} rule.`);
+										return;
+								}
+								let ctkRules = getCtkRuleSet(targetScope);
+								if (ctkRules.length === 0) {
+										vscode.window.showInformationMessage(`CTK GEE: No ${scopeNameProper} rules to delete.`);
+										return;
+								}
 
-    } catch (error) {
-        console.error("CTK GEE: Error registering commands:", error);
-        vscode.window.showErrorMessage("CTK GEE: Critical error registering commands. Extension may not function. Check Developer Tools Console.");
-        return; // Stop activation if command registration itself fails
-    }
+								const geminiString = await getGeminiRulesStringFromConfig(targetScope);
+								const { valueMap } = parseGeminiRulesString(geminiString);
 
-    // --- Configuration Change Listener ---
-    try {
-        console.log('CTK GEE: Registering configuration listener...');
-        context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(async event => {
-            const ctkRuleSetKeyScoped = `${CONFIG_SECTION_CTK}.${CTK_RULE_SET_KEY}`;
-            const geminiRulesKey = GEMINI_CODE_ASSIST_RULES_KEY;
+								const ruleItems = ctkRules.map(r => ({
+										label: `ID ${r.id}: ${r.key}`,
+										description: (valueMap.get(r.key) || "").substring(0, 50) + '...',
+										ruleId: r.id,
+										keyToDelete: r.key
+								}));
+								const selectedItem = await vscode.window.showQuickPick(ruleItems, { placeHolder: `Select a ${scopeNameProper} rule to delete` });
 
-            if (event.affectsConfiguration(ctkRuleSetKeyScoped)) {
-                console.log(`CTK GEE: ${ctkRuleSetKeyScoped} changed. Syncing relevant scopes.`);
-                // It's possible ctk.ruleSet was changed manually, so ensure uniqueness before syncing
-                let globalRules = getCtkRuleSet(vscode.ConfigurationTarget.Global);
-                await ensureUniqueIdsAndKeys(globalRules, "Global", vscode.ConfigurationTarget.Global);
-                globalRules = getCtkRuleSet(vscode.ConfigurationTarget.Global); // Re-fetch
-                await syncRuleSetToGeminiRules(vscode.ConfigurationTarget.Global);
+						if (!selectedItem) return; // User cancelled
 
-                if (isWorkspaceOpen()) {
-                    let workspaceRules = getCtkRuleSet(vscode.ConfigurationTarget.Workspace);
-                    await ensureUniqueIdsAndKeys(workspaceRules, "Workspace", vscode.ConfigurationTarget.Workspace);
-                    workspaceRules = getCtkRuleSet(vscode.ConfigurationTarget.Workspace); // Re-fetch
-                    await syncRuleSetToGeminiRules(vscode.ConfigurationTarget.Workspace);
-                }
-            }
+								const confirm = await vscode.window.showWarningMessage(`Are you sure you want to delete ${scopeNameProper} rule ID ${selectedItem.ruleId} (Key: "${selectedItem.keyToDelete}")?`, { modal: true }, "Yes, delete it");
+						if (confirm !== "Yes, delete it") return;
 
-            if (event.affectsConfiguration(geminiRulesKey)) {
-                console.log(`CTK GEE: ${geminiRulesKey} changed. Checking for external modifications in relevant scopes.`);
-                // This check compares against the current ctk.ruleSet, which should be clean by now.
-                await checkAndResolveExternalGeminiRulesChange(vscode.ConfigurationTarget.Global);
-                if (isWorkspaceOpen()) {
-                    await checkAndResolveExternalGeminiRulesChange(vscode.ConfigurationTarget.Workspace);
-                }
-            }
-        }));
-        console.log('CTK GEE: Configuration listener registered.');
-    } catch (error) {
-        console.error("CTK GEE: Error registering configuration listener:", error);
-        vscode.window.showErrorMessage("CTK GEE: Error registering configuration listener. Auto-sync on config change might be affected. Check Developer Tools Console.");
-    }
-    console.log('CTK GEE: Activation fully completed.');
+						// Update ctk.ruleSet
+						const updatedCtkRules = ctkRules.filter(r => r.id !== selectedItem.ruleId);
+						await updateCtkRuleSet(updatedCtkRules, targetScope);
+
+						// Update geminicodeassist.rules
+						const { orderedKeyValues } = parseGeminiRulesString(await getGeminiRulesStringFromConfig(targetScope)); // Re-fetch
+						const filteredGeminiKeyValues = orderedKeyValues.filter(kv => kv.key !== selectedItem.keyToDelete);
+						const newGeminiString = buildGeminiRulesString(filteredGeminiKeyValues);
+						await updateGeminiRulesStringInConfig(newGeminiString, targetScope);
+
+						vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} Rule ID ${selectedItem.ruleId} (Key: ${selectedItem.keyToDelete}) deleted.`);
+						}));
+
+						// Force Sync Command
+						context.subscriptions.push(vscode.commands.registerCommand(`ctk.forceSync${commandSuffix}Rules`, async () => {
+								if (targetScope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
+										vscode.window.showInformationMessage(`CTK GEE: A workspace must be open to sync ${scopeNameProper} rules.`);
+										return;
+								}
+								// Ensure ctk.ruleSet is clean first, then sync
+								const currentCtkRules = getCtkRuleSet(targetScope);
+								const { cleanedCtkRules, keyRenames } = await ensureAndCleanCtkRuleSet(currentCtkRules, scopeNameProper);
+								await updateCtkRuleSet(cleanedCtkRules, targetScope); // Save cleaned ctk.ruleSet
+								await syncRules(targetScope, keyRenames); // Sync to geminicodeassist.rules
+								vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} rules manually synced.`);
+						}));
+				};
+
+				// Register commands for Global scope
+				registerCrudCommandsForScope(vscode.ConfigurationTarget.Global, "Global", "Global");
+
+				// Register commands for Workspace scope
+				registerCrudCommandsForScope(vscode.ConfigurationTarget.Workspace, "Workspace", "Workspace");
+				console.log('CTK GEE: All commands registered.');
+
+		} catch (error) {
+				console.error("CTK GEE: Error registering commands:", error);
+				vscode.window.showErrorMessage("CTK GEE: Critical error registering commands. Extension may not function. Check Developer Tools Console.");
+				return; // Stop activation if command registration itself fails
+		}
+
+		// --- Configuration Change Listener ---
+		try {
+				console.log('CTK GEE: Registering configuration listener...');
+				context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(async event => {
+						const ctkRuleSetKeyScoped = `${CONFIG_SECTION_CTK}.${CTK_RULE_SET_KEY}`;
+						const geminiRulesKey = GEMINI_CODE_ASSIST_RULES_KEY;
+						
+						// Determine if the change affects global or workspace settings
+						let affectedScope = null;
+						// Check if the event affects the configuration in the global scope or any workspace scope
+						if (event.affectsConfiguration(ctkRuleSetKeyScoped, null) || event.affectsConfiguration(geminiRulesKey, null)) {
+								 // If a workspace is open, check if the change is specific to the workspace
+								if (isWorkspaceOpen() && (event.affectsConfiguration(ctkRuleSetKeyScoped, vscode.workspace.workspaceFolders[0].uri) || event.affectsConfiguration(geminiRulesKey, vscode.workspace.workspaceFolders[0].uri))) {
+										affectedScope = vscode.ConfigurationTarget.Workspace;
+								} else if (!isWorkspaceOpen() || 
+													!(event.affectsConfiguration(ctkRuleSetKeyScoped, vscode.workspace.workspaceFolders?.[0].uri) || 
+														event.affectsConfiguration(geminiRulesKey, vscode.workspace.workspaceFolders?.[0].uri))
+													) {
+										// If no workspace is open, or if the change is not specific to the workspace (when one is open),
+										// assume it's a global change.
+										affectedScope = vscode.ConfigurationTarget.Global;
+								}
+						}
+
+						if (!affectedScope) return; // Change didn't affect our settings or relevant scope
+
+						const scopeNameProper = affectedScope === vscode.ConfigurationTarget.Global ? "Global" : "Workspace";
+
+						if (event.affectsConfiguration(ctkRuleSetKeyScoped, affectedScope === vscode.ConfigurationTarget.Workspace ? vscode.workspace.workspaceFolders[0].uri : undefined)) {
+								console.log(`CTK GEE: ${ctkRuleSetKeyScoped} changed for ${scopeNameProper}. Ensuring integrity and syncing.`);
+								const currentCtkRules = getCtkRuleSet(affectedScope);
+								const { cleanedCtkRules, keyRenames, madeChanges } = await ensureAndCleanCtkRuleSet(currentCtkRules, scopeNameProper);
+
+								if (madeChanges) { // If ensureAndCleanCtkRuleSet modified the ctkRules (e.g. deduped keys/ids)
+										await updateCtkRuleSet(cleanedCtkRules, affectedScope); // Persist cleaned ctk.ruleSet
+								}
+								// Always sync, as order might have changed or keys might have been cleaned
+								await syncRules(affectedScope, keyRenames);
+
+						} else if (event.affectsConfiguration(geminiRulesKey, affectedScope === vscode.ConfigurationTarget.Workspace ? vscode.workspace.workspaceFolders[0].uri : undefined)) {
+								console.log(`CTK GEE: ${geminiRulesKey} changed for ${scopeNameProper}. Reconciling with ctk.ruleSet.`);
+								await reconcileCtkWithExternalGeminiChange(affectedScope);
+						}
+				}));
+				console.log('CTK GEE: Configuration listener registered.');
+		} catch (error) {
+				console.error("CTK GEE: Error registering configuration listener:", error);
+				vscode.window.showErrorMessage("CTK GEE: Error registering configuration listener. Auto-sync on config change might be affected. Check Developer Tools Console.");
+		}
+		console.log('CTK GEE: Activation fully completed.');
 }
 
 // This method is called when your extension is deactivated
 function deactivate() {}
 
 module.exports = {
-    activate,
-    deactivate
+		activate,
+		deactivate
 }

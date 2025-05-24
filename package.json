@@ -91,16 +91,11 @@
               "key": {
                 "type": "string",
                 "description": "The key for the rule."
-              },
-              "value": {
-                "type": "string",
-                "description": "The value/content of the rule."
               }
             },
             "required": [
               "id",
-              "key",
-              "value"
+              "key"
             ]
           }
         }
