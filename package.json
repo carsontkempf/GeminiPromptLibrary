@@ -16,7 +16,7 @@
       "activitybar": [
         {
           "id": "ctk-gee-sidebar",
-          "title": "CTK GEE Rules",
+          "title": "Gemini Prompt Library",
           "icon": "icons/library.png"
         }
       ]
@@ -33,8 +33,7 @@
           "id": "ctk-gee-workspace-rules",
           "name": "Workspace Rules",
           "icon": "$(folder-active)",
-          "contextualTitle": "Workspace Rules",
-          "when": "workspaceFolders"
+          "contextualTitle": "Workspace Rules"
         }
       ]
     },

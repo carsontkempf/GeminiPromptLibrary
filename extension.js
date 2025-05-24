@@ -456,38 +456,32 @@ class CtkRulesProvider { // implements vscode.TreeDataProvider<RuleTreeItem | Me
 	}
 
 	async getChildren(element) {
-		if (!element) {
-			// Root level: return the scope-specific root item
-			const rootLabel = this.scopeNameProper; // "User" or "Workspace"
-			const rootItem = new vscode.TreeItem(rootLabel, vscode.TreeItemCollapsibleState.Expanded);
-			// Assign a context value to distinguish this root item if needed for commands/icons
-			rootItem.contextValue = 'ctkScopeRoot';
-			// Optionally, assign an icon
-			// rootItem.iconPath = new vscode.ThemeIcon(this.scope === vscode.ConfigurationTarget.Global ? 'account' : 'folder-opened');
-			return [rootItem];
+		// If an element is provided, it means it's a RuleTreeItem or MessageTreeItem.
+		// These are leaf nodes and have no children.
+		if (element) {
+			return [];
 		}
 
-		if (element.contextValue === 'ctkScopeRoot') {
-			// Element is one of our scope root items, now fetch its children (the rules)
-			if (this.scope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
-				return [new MessageTreeItem("No workspace open.")];
-			}
+		// If no element is provided, we are at the root of this TreeView
+		// (either "User Rules" or "Workspace Rules").
+		// We directly return the list of rules or relevant messages for the current scope.
 
-			const ctkRules = getCtkRuleSet(this.scope);
-			if (ctkRules.length === 0) {
-				return [new MessageTreeItem(`No ${this.scopeNameProper.toLowerCase()} rules defined. Click '+' to add.`)];
-			}
-
-			const geminiString = await getGeminiRulesStringFromConfig(this.scope);
-			const { valueMap } = parseGeminiRulesString(geminiString);
-
-			return ctkRules.map(rule => {
-				const value = valueMap.get(rule.key) || "";
-				return new RuleTreeItem({ ...rule, value, scope: this.scope }, vscode.TreeItemCollapsibleState.None);
-			}).sort((a, b) => a.ruleSpec.key.localeCompare(b.ruleSpec.key)); // Sort by key for consistent display
+		if (this.scope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
+			return [new MessageTreeItem("No workspace open.")];
 		}
 
-		return []; // RuleTreeItems are leaf nodes
+		const ctkRules = getCtkRuleSet(this.scope);
+		if (ctkRules.length === 0) {
+			return [new MessageTreeItem(`No ${this.scopeNameProper.toLowerCase()} rules defined. Click '+' to add.`)];
+		}
+
+		const geminiString = await getGeminiRulesStringFromConfig(this.scope);
+		const { valueMap } = parseGeminiRulesString(geminiString);
+
+		return ctkRules.map(rule => {
+			const value = valueMap.get(rule.key) || "";
+			return new RuleTreeItem({ ...rule, value, scope: this.scope }, vscode.TreeItemCollapsibleState.None);
+		}).sort((a, b) => a.ruleSpec.key.localeCompare(b.ruleSpec.key)); // Sort by key for consistent display
 	}
 }
 
