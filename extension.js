@@ -212,6 +212,75 @@ async function performInitialWorkspaceImport() {
 }
 
 /**
+ * Ensures that all rules in the given array have unique IDs and unique keys.
+ * IDs will be re-assigned sequentially if duplicates or non-numeric IDs are found.
+ * Duplicate keys will be modified by appending a suffix (e.g., "_duplicate_1").
+ * @param {Rule[]} rules The array of rules to process.
+ * @param {string} scopeNameProper User-friendly scope name (e.g., "Global", "Workspace").
+ * @param {vscode.ConfigurationTarget} scope The configuration scope.
+ * @returns {Promise<boolean>} True if changes were made and updated, false otherwise.
+ */
+async function ensureUniqueIdsAndKeys(rules, scopeNameProper, scope) {
+    if (!Array.isArray(rules)) return false;
+
+    let madeChanges = false;
+
+    // 1. Ensure unique and sequential IDs
+    const idSet = new Set();
+    let maxId = 0;
+    let reassignIds = false;
+
+    for (const rule of rules) {
+        if (typeof rule.id !== 'number' || idSet.has(rule.id) || rule.id <= 0) {
+            reassignIds = true;
+            break;
+        }
+        idSet.add(rule.id);
+        if (rule.id > maxId) maxId = rule.id;
+    }
+
+    if (reassignIds) {
+        madeChanges = true;
+        console.warn(`CTK GEE: Re-assigning IDs for ${scopeNameProper} rules due to duplicates, non-numeric, or non-positive values.`);
+        rules.forEach((rule, index) => {
+            rule.id = index + 1;
+        });
+    }
+
+    // 2. Ensure unique keys
+    const keyCounts = new Map();
+    const originalKeysToNewKeys = new Map(); // To handle multiple duplicates of the same original key
+
+    for (const rule of rules) {
+        let currentKey = rule.key;
+        let count = keyCounts.get(currentKey) || 0;
+
+        if (count > 0) { // This key is a duplicate
+            madeChanges = true;
+            let newKey;
+            let duplicateIndex = originalKeysToNewKeys.get(currentKey) || 0;
+            do {
+                duplicateIndex++;
+                newKey = `${currentKey}_duplicate_${duplicateIndex}`;
+            } while (keyCounts.has(newKey)); // Ensure the new suffixed key is also unique
+            originalKeysToNewKeys.set(currentKey, duplicateIndex);
+            console.warn(`CTK GEE: Modifying duplicate key "${currentKey}" to "${newKey}" in ${scopeNameProper} rules.`);
+            rule.key = newKey;
+            keyCounts.set(newKey, 1); // Add the new unique key
+        } else {
+            keyCounts.set(currentKey, 1);
+        }
+    }
+
+    if (madeChanges) {
+        await updateCtkRuleSet(rules, scope);
+        vscode.window.showWarningMessage(`CTK GEE: Rules in ${scopeNameProper} settings were adjusted to ensure unique IDs and/or keys. Please review them if necessary.`);
+        return true;
+    }
+    return false;
+}
+
+/**
  * @param {vscode.ExtensionContext} context
  */
 async function activate(context) {
@@ -220,15 +289,25 @@ async function activate(context) {
     try {
         console.log('CTK GEE: Performing initial imports and syncs...');
         await performInitialGlobalImport();
+        let globalRules = getCtkRuleSet(vscode.ConfigurationTarget.Global);
+        await ensureUniqueIdsAndKeys(globalRules, "Global", vscode.ConfigurationTarget.Global);
+
         if (isWorkspaceOpen()) {
             await performInitialWorkspaceImport();
+            let workspaceRules = getCtkRuleSet(vscode.ConfigurationTarget.Workspace);
+            await ensureUniqueIdsAndKeys(workspaceRules, "Workspace", vscode.ConfigurationTarget.Workspace);
         }
 
+        // Re-fetch rules after potential modifications by ensureUniqueIdsAndKeys before syncing
+        globalRules = getCtkRuleSet(vscode.ConfigurationTarget.Global);
         await syncRuleSetToGeminiRules(vscode.ConfigurationTarget.Global);
+
         if (isWorkspaceOpen()) {
+            let workspaceRules = getCtkRuleSet(vscode.ConfigurationTarget.Workspace);
             await syncRuleSetToGeminiRules(vscode.ConfigurationTarget.Workspace);
         }
         console.log('CTK GEE: Initial imports and syncs completed.');
+
     } catch (error) {
         console.error("CTK GEE: Error during initial setup (imports/syncs):", error);
         vscode.window.showErrorMessage("CTK GEE: Error during initial setup. Some features might be affected. Check Developer Tools Console (Help > Toggle Developer Tools).");
@@ -248,13 +327,21 @@ async function activate(context) {
                     return;
                 }
 
-            const key = await vscode.window.showInputBox({ prompt: "Enter the rule key", validateInput: text => text && text.trim() !== "" ? null : "Key cannot be empty." });
+            const keyInput = await vscode.window.showInputBox({ 
+                prompt: `Enter the rule key for ${scopeNameProper} settings`, 
+                validateInput: text => text && text.trim() !== "" ? null : "Key cannot be empty." 
+            });
+            if (keyInput === undefined) return; // User cancelled
+            const key = keyInput.trim();
+
+            let rules = getCtkRuleSet(targetScope);
+            if (rules.some(r => r.key === key)) {
+                vscode.window.showErrorMessage(`CTK GEE: A rule with key "${key}" already exists in ${scopeNameProper} settings. Keys must be unique.`);
+                return;
+            }
+
+            const value = await vscode.window.showInputBox({ prompt: `Enter the rule value for ${scopeNameProper} settings`, validateInput: text => text && text.trim() !== "" ? null : "Value cannot be empty." });
             if (key === undefined) return; // User cancelled
-
-            const value = await vscode.window.showInputBox({ prompt: "Enter the rule value", validateInput: text => text && text.trim() !== "" ? null : "Value cannot be empty." });
-            if (value === undefined) return; // User cancelled
-
-                let rules = getCtkRuleSet(targetScope);
             const newId = rules.length > 0 ? Math.max(0, ...rules.map(r => r.id)) + 1 : 1;
             rules.push({ id: newId, key: key.trim(), value: value.trim() });
                 await updateCtkRuleSet(rules, targetScope);
@@ -307,14 +394,21 @@ async function activate(context) {
             }
 
             const newKey = await vscode.window.showInputBox({
-                prompt: "Enter the new rule key",
+                prompt: `Enter the new rule key for ${scopeNameProper} (Original: ${ruleToEdit.key})`,
                 value: ruleToEdit.key,
                 validateInput: text => text && text.trim() !== "" ? null : "Key cannot be empty."
             });
-            if (newKey === undefined) return;
+            if (newKey === undefined) return; // User cancelled
+            const trimmedNewKey = newKey.trim();
+
+            // Check for key uniqueness (excluding the current rule being edited if its key hasn't changed)
+            if (trimmedNewKey !== ruleToEdit.key && rules.some(r => r.id !== ruleToEdit.id && r.key === trimmedNewKey)) {
+                vscode.window.showErrorMessage(`CTK GEE: A rule with key "${trimmedNewKey}" already exists in ${scopeNameProper} settings. Keys must be unique.`);
+                return;
+            }
 
             const newValue = await vscode.window.showInputBox({
-                prompt: "Enter the new rule value",
+                prompt: `Enter the new rule value for ${scopeNameProper} (Original Value: ${ruleToEdit.value.substring(0,50)}...)`,
                 value: ruleToEdit.value,
                 validateInput: text => text && text.trim() !== "" ? null : "Value cannot be empty."
             });
@@ -384,14 +478,23 @@ async function activate(context) {
 
             if (event.affectsConfiguration(ctkRuleSetKeyScoped)) {
                 console.log(`CTK GEE: ${ctkRuleSetKeyScoped} changed. Syncing relevant scopes.`);
+                // It's possible ctk.ruleSet was changed manually, so ensure uniqueness before syncing
+                let globalRules = getCtkRuleSet(vscode.ConfigurationTarget.Global);
+                await ensureUniqueIdsAndKeys(globalRules, "Global", vscode.ConfigurationTarget.Global);
+                globalRules = getCtkRuleSet(vscode.ConfigurationTarget.Global); // Re-fetch
                 await syncRuleSetToGeminiRules(vscode.ConfigurationTarget.Global);
+
                 if (isWorkspaceOpen()) {
+                    let workspaceRules = getCtkRuleSet(vscode.ConfigurationTarget.Workspace);
+                    await ensureUniqueIdsAndKeys(workspaceRules, "Workspace", vscode.ConfigurationTarget.Workspace);
+                    workspaceRules = getCtkRuleSet(vscode.ConfigurationTarget.Workspace); // Re-fetch
                     await syncRuleSetToGeminiRules(vscode.ConfigurationTarget.Workspace);
                 }
             }
 
             if (event.affectsConfiguration(geminiRulesKey)) {
                 console.log(`CTK GEE: ${geminiRulesKey} changed. Checking for external modifications in relevant scopes.`);
+                // This check compares against the current ctk.ruleSet, which should be clean by now.
                 await checkAndResolveExternalGeminiRulesChange(vscode.ConfigurationTarget.Global);
                 if (isWorkspaceOpen()) {
                     await checkAndResolveExternalGeminiRulesChange(vscode.ConfigurationTarget.Workspace);
