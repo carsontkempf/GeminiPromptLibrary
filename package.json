@@ -12,6 +12,32 @@
   ],
   "main": "./extension.js",
   "contributes": {
+        "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ctk-gee-sidebar",
+          "title": "CTK GEE Rules",
+          "icon": "icons/library.png"
+        }
+      ]
+    },
+    "views": {
+      "ctk-gee-sidebar": [
+        {
+          "id": "ctk-gee-user-rules",
+          "name": "User Rules",
+          "icon": "$(settings-gear)",
+          "contextualTitle": "User Rules"
+        },
+        {
+          "id": "ctk-gee-workspace-rules",
+          "name": "Workspace Rules",
+          "icon": "$(folder-active)",
+          "contextualTitle": "Workspace Rules",
+          "when": "workspaceFolders"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "ctk.addGlobalRule",
@@ -67,40 +93,119 @@
         "title": "Force Sync Workspace Rules",
         "category": "CTK GEE",
         "when": "workspaceFound"
+      },
+      {
+        "command": "ctk.tree.addUserRule",
+        "title": "Add User Rule",
+        "icon": "$(add)"
+      },
+      {
+        "command": "ctk.tree.addWorkspaceRule",
+        "title": "Add Workspace Rule",
+        "icon": "$(add)"
+      },
+      {
+        "command": "ctk.tree.editRule",
+        "title": "Edit Rule",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "ctk.tree.deleteRule",
+        "title": "Delete Rule",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "ctk.tree.refreshUserRules",
+        "title": "Refresh User Rules",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "ctk.tree.refreshWorkspaceRules",
+        "title": "Refresh Workspace Rules",
+        "icon": "$(refresh)"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "ctk.tree.addUserRule",
+          "when": "view == ctk-gee-user-rules",
+          "group": "navigation"
+        },
+        {
+          "command": "ctk.tree.refreshUserRules",
+          "when": "view == ctk-gee-user-rules",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ctk.tree.addWorkspaceRule",
+          "when": "view == ctk-gee-workspace-rules",
+          "group": "navigation"
+        },
+        {
+          "command": "ctk.tree.refreshWorkspaceRules",
+          "when": "view == ctk-gee-workspace-rules",
+          "group": "navigation@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "ctk.tree.editRule",
+          "when": "viewItem == ctkRuleItem",
+          "group": "inline@1"
+        },
+        {
+          "command": "ctk.tree.deleteRule",
+          "when": "viewItem == ctkRuleItem",
+          "group": "inline@2"
+        }
+      ]
+    },
     "activationEvents": [
       "onStartupFinished"
     ],
-    "configuration": {
-      "title": "CTK GEE Settings",
-      "properties": {
-        "ctk.ruleSet": {
-          "type": "array",
-          "default": [],
-          "description": "Individual rule key-value pairs for CTK GEE. These are combined to populate 'geminicodeassist.rules' at the corresponding scope (User/Global or Workspace).",
-          "scope": "resource",
-          "items": {
-            "type": "object",
-            "title": "Rule",
-            "properties": {
-              "id": {
-                "type": "number",
-                "description": "Unique ID for the rule within its scope (managed by the extension)."
+    "configuration": [
+      {
+        "title": "CTK GEE",
+        "properties": {
+          "ctk.ruleSet": {
+            "type": "array",
+            "default": [],
+            "description": "Individual rule definitions (ID and key) for CTK GEE. These are used to manage and order rules, whose values are stored and synced with 'geminicodeassist.rules'.",
+            "scope": "resource",
+            "items": {
+              "type": "object",
+              "title": "Rule Definition",
+              "properties": {
+                "id": {
+                  "type": "number",
+                  "description": "Unique ID for the rule within its scope (managed by the extension)."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "The key for the rule."
+                }
               },
-              "key": {
-                "type": "string",
-                "description": "The key for the rule."
-              }
-            },
-            "required": [
-              "id",
-              "key"
-            ]
+              "required": [
+                "id",
+                "key"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Gemini Code Assist Integration (Managed by CTK GEE)",
+        "properties": {
+          "geminicodeassist.rules": {
+            "type": "string",
+            "default": "",
+            "description": "The combined rules string (e.g., 'key1: value1\\n\\n\\n\\nkey2: value2'). This setting is managed by the 'CTK GEE' extension based on 'ctk.ruleSet'. Direct edits may be overwritten by CTK GEE to maintain consistency.",
+            "scope": "resource"
           }
         }
       }
-    }
+    ]
   },
   "scripts": {
     "lint": "eslint .",

@@ -405,11 +405,96 @@ async function ensureAndCleanCtkRuleSet(ctkRulesArray, scopeNameProper, showMess
 		return { cleanedCtkRules: rules, keyRenames, madeChanges };
 }
 
+// --- TreeView Classes ---
+
+class RuleTreeItem extends vscode.TreeItem {
+	/**
+	 * @param {object} ruleSpec The specification for the rule.
+	 * @param {number} ruleSpec.id Unique ID for the rule.
+	 * @param {string} ruleSpec.key The key for the rule.
+	 * @param {string} ruleSpec.value The value of the rule.
+	 * @param {vscode.ConfigurationTarget} ruleSpec.scope The scope of the rule.
+	 * @param {vscode.TreeItemCollapsibleState} [collapsibleState=vscode.TreeItemCollapsibleState.None] The collapsible state of the tree item.
+	 */
+	constructor(
+		ruleSpec,
+		collapsibleState = vscode.TreeItemCollapsibleState.None
+	) {
+		super(`${ruleSpec.key}`, collapsibleState);
+		this.ruleSpec = ruleSpec; // Assign to instance property
+
+		const valueSnippet = ruleSpec.value.substring(0, 70);
+		this.description = `${valueSnippet}${ruleSpec.value.length > 70 ? '...' : ''}`;
+		this.tooltip = new vscode.MarkdownString(`**Key:** \`${ruleSpec.key}\`\n\n**Value:**\n\`\`\`\n${ruleSpec.value}\n\`\`\``);
+		this.id = `${ruleSpec.scope === vscode.ConfigurationTarget.Global ? 'global' : 'workspace'}-${ruleSpec.id}`; // Unique ID for the tree item
+		this.contextValue = 'ctkRuleItem'; // Used in package.json for menu contributions
+	}
+}
+
+class MessageTreeItem extends vscode.TreeItem {
+	constructor(message) {
+		super(message, vscode.TreeItemCollapsibleState.None);
+		this.contextValue = 'ctkMessageItem';
+	}
+}
+
+class CtkRulesProvider { // implements vscode.TreeDataProvider<RuleTreeItem | MessageTreeItem>
+	_onDidChangeTreeData = new vscode.EventEmitter();
+	onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+	constructor(scope) {
+		this.scope = scope;
+		this.scopeNameProper = scope === vscode.ConfigurationTarget.Global ? "User" : "Workspace";
+	}
+
+	refresh() {
+		this._onDidChangeTreeData.fire();
+	}
+
+	getTreeItem(element) {
+		return element;
+	}
+
+	async getChildren(element) {
+		if (element) {
+			return []; // Rules are leaf nodes
+		}
+
+		if (this.scope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
+			return [new MessageTreeItem("No workspace open.")];
+		}
+
+		const ctkRules = getCtkRuleSet(this.scope);
+		if (ctkRules.length === 0) {
+			return [new MessageTreeItem(`No ${this.scopeNameProper.toLowerCase()} rules defined. Click '+' to add.`)];
+		}
+
+		const geminiString = await getGeminiRulesStringFromConfig(this.scope);
+		const { valueMap } = parseGeminiRulesString(geminiString);
+
+		return ctkRules.map(rule => {
+			const value = valueMap.get(rule.key) || "";
+			return new RuleTreeItem({ ...rule, value, scope: this.scope });
+		}).sort((a, b) => a.ruleSpec.key.localeCompare(b.ruleSpec.key)); // Sort by key for consistent display
+	}
+}
+
+// Store providers globally within the activate function's scope
+let userRulesProvider;
+let workspaceRulesProvider;
+
 /**
  * @param {vscode.ExtensionContext} context
  */
 async function activate(context) {
 		console.log('CTK GEE: Extension "ctk" is now active!');
+
+		// --- Initialize TreeView Providers ---
+		userRulesProvider = new CtkRulesProvider(vscode.ConfigurationTarget.Global);
+		context.subscriptions.push(vscode.window.createTreeView('ctk-gee-user-rules', { treeDataProvider: userRulesProvider, showCollapseAll: true }));
+
+		workspaceRulesProvider = new CtkRulesProvider(vscode.ConfigurationTarget.Workspace);
+		context.subscriptions.push(vscode.window.createTreeView('ctk-gee-workspace-rules', { treeDataProvider: workspaceRulesProvider, showCollapseAll: true }));
 
 		try {
 				console.log('CTK GEE: Performing initial imports and data cleaning...');
@@ -424,6 +509,8 @@ async function activate(context) {
 						await updateCtkRuleSet(wsClean, vscode.ConfigurationTarget.Workspace);
 						await syncRules(vscode.ConfigurationTarget.Workspace, wsKeyRenames);
 				}
+				if (userRulesProvider) userRulesProvider.refresh();
+				if (workspaceRulesProvider) workspaceRulesProvider.refresh();
 				console.log('CTK GEE: Initial setup completed.');
 
 		} catch (error) {
@@ -474,6 +561,11 @@ async function activate(context) {
 								await updateGeminiRulesStringInConfig(newGeminiString, targetScope);
 
 								vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} Rule ID ${newId} (Key: ${key}) added.`);
+								if (targetScope === vscode.ConfigurationTarget.Global && userRulesProvider) {
+									userRulesProvider.refresh();
+								} else if (targetScope === vscode.ConfigurationTarget.Workspace && workspaceRulesProvider) {
+									workspaceRulesProvider.refresh();
+								}
 						}));
 
 						// View Rules Command
@@ -575,6 +667,11 @@ async function activate(context) {
 						await updateGeminiRulesStringInConfig(newGeminiString, targetScope);
 
 						vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} Rule ID ${ruleToEdit.id} updated.`);
+						if (targetScope === vscode.ConfigurationTarget.Global && userRulesProvider) {
+							userRulesProvider.refresh();
+						} else if (targetScope === vscode.ConfigurationTarget.Workspace && workspaceRulesProvider) {
+							workspaceRulesProvider.refresh();
+						}
 						}));
 
 						// Delete Rule Command
@@ -616,6 +713,11 @@ async function activate(context) {
 						await updateGeminiRulesStringInConfig(newGeminiString, targetScope);
 
 						vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} Rule ID ${selectedItem.ruleId} (Key: ${selectedItem.keyToDelete}) deleted.`);
+						if (targetScope === vscode.ConfigurationTarget.Global && userRulesProvider) {
+							userRulesProvider.refresh();
+						} else if (targetScope === vscode.ConfigurationTarget.Workspace && workspaceRulesProvider) {
+							workspaceRulesProvider.refresh();
+						}
 						}));
 
 						// Force Sync Command
@@ -630,6 +732,11 @@ async function activate(context) {
 								await updateCtkRuleSet(cleanedCtkRules, targetScope); // Save cleaned ctk.ruleSet
 								await syncRules(targetScope, keyRenames); // Sync to geminicodeassist.rules
 								vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} rules manually synced.`);
+								if (targetScope === vscode.ConfigurationTarget.Global && userRulesProvider) {
+									userRulesProvider.refresh();
+								} else if (targetScope === vscode.ConfigurationTarget.Workspace && workspaceRulesProvider) {
+									workspaceRulesProvider.refresh();
+								}
 						}));
 				};
 
@@ -639,6 +746,99 @@ async function activate(context) {
 				// Register commands for Workspace scope
 				registerCrudCommandsForScope(vscode.ConfigurationTarget.Workspace, "Workspace", "Workspace");
 				console.log('CTK GEE: All commands registered.');
+
+				// --- Register TreeView specific commands ---
+				context.subscriptions.push(vscode.commands.registerCommand('ctk.tree.refreshUserRules', () => {
+					if (userRulesProvider) userRulesProvider.refresh();
+				}));
+				context.subscriptions.push(vscode.commands.registerCommand('ctk.tree.addUserRule', () => {
+					vscode.commands.executeCommand('ctk.addGlobalRule'); // Existing command handles logic and refresh
+				}));
+
+				context.subscriptions.push(vscode.commands.registerCommand('ctk.tree.refreshWorkspaceRules', () => {
+					if (workspaceRulesProvider) workspaceRulesProvider.refresh();
+				}));
+				context.subscriptions.push(vscode.commands.registerCommand('ctk.tree.addWorkspaceRule', () => {
+					vscode.commands.executeCommand('ctk.addWorkspaceRule'); // Existing command handles logic and refresh
+				}));
+
+				context.subscriptions.push(vscode.commands.registerCommand('ctk.tree.editRule', async (item) => {
+					if (!item || !item.ruleSpec) {
+						vscode.window.showErrorMessage("CTK GEE: No rule selected for editing from tree.");
+						return;
+					}
+					const { id: ruleId, key: originalKey, value: originalValue, scope } = item.ruleSpec;
+					const scopeNameProper = scope === vscode.ConfigurationTarget.Global ? "Global" : "Workspace";
+
+					if (scope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
+						vscode.window.showInformationMessage(`CTK GEE: A workspace must be open to edit a ${scopeNameProper} rule.`);
+						return;
+					}
+
+					// Delegate to existing edit command by finding the rule and then calling a modified version
+					// Or, replicate logic here:
+					let ctkRules = getCtkRuleSet(scope);
+					const ruleToEdit = ctkRules.find(r => r.id === ruleId);
+					if (!ruleToEdit) {
+						vscode.window.showErrorMessage(`CTK GEE: Rule ID ${ruleId} not found in ${scopeNameProper} ctk.ruleSet.`);
+						return;
+					}
+
+					const newKeyInput = await vscode.window.showInputBox({ prompt: `Enter new key for '${originalKey}'`, value: originalKey, validateInput: text => text && text.trim() !== "" ? null : "Key cannot be empty." });
+					if (newKeyInput === undefined) return;
+					const newKey = newKeyInput.trim();
+
+					if (newKey !== originalKey && ctkRules.some(r => r.id !== ruleId && r.key === newKey)) {
+						vscode.window.showErrorMessage(`CTK GEE: A rule with key "${newKey}" already exists in ${scopeNameProper}.`);
+						return;
+					}
+
+					const newValue = await vscode.window.showInputBox({ prompt: `Enter new value for '${newKey}'`, value: originalValue, validateInput: text => text !== undefined ? null : "Value cannot be null." });
+					if (newValue === undefined) return;
+
+					ruleToEdit.key = newKey;
+					await updateCtkRuleSet(ctkRules, scope);
+
+					const geminiKVs = parseGeminiRulesString(await getGeminiRulesStringFromConfig(scope)).orderedKeyValues;
+					const updatedGeminiKVs = geminiKVs.map(kv => (kv.key === originalKey ? { key: newKey, value: newValue } : kv));
+					if (!updatedGeminiKVs.find(kv => kv.key === newKey) && originalKey !== newKey) { // If originalKey wasn't found, add new one
+						updatedGeminiKVs.push({ key: newKey, value: newValue });
+					}
+					await updateGeminiRulesStringInConfig(buildGeminiRulesString(updatedGeminiKVs), scope);
+
+					vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} Rule ID ${ruleId} updated via tree.`);
+					if (scope === vscode.ConfigurationTarget.Global && userRulesProvider) userRulesProvider.refresh();
+					if (scope === vscode.ConfigurationTarget.Workspace && workspaceRulesProvider) workspaceRulesProvider.refresh();
+				}));
+
+				context.subscriptions.push(vscode.commands.registerCommand('ctk.tree.deleteRule', async (item) => {
+					if (!item || !item.ruleSpec) {
+						vscode.window.showErrorMessage("CTK GEE: No rule selected for deletion from tree.");
+						return;
+					}
+					const { id: ruleId, key: keyToDelete, scope } = item.ruleSpec;
+					const scopeNameProper = scope === vscode.ConfigurationTarget.Global ? "Global" : "Workspace";
+
+					if (scope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
+						vscode.window.showInformationMessage(`CTK GEE: A workspace must be open to delete a ${scopeNameProper} rule.`);
+						return;
+					}
+
+					const confirm = await vscode.window.showWarningMessage(`Delete ${scopeNameProper} rule "${keyToDelete}"?`, { modal: true }, "Yes");
+					if (confirm !== "Yes") return;
+
+					let ctkRules = getCtkRuleSet(scope);
+					const updatedCtkRules = ctkRules.filter(r => r.id !== ruleId);
+					await updateCtkRuleSet(updatedCtkRules, scope);
+
+					const geminiKVs = parseGeminiRulesString(await getGeminiRulesStringFromConfig(scope)).orderedKeyValues;
+					const filteredGeminiKVs = geminiKVs.filter(kv => kv.key !== keyToDelete);
+					await updateGeminiRulesStringInConfig(buildGeminiRulesString(filteredGeminiKVs), scope);
+
+					vscode.window.showInformationMessage(`CTK GEE: ${scopeNameProper} Rule "${keyToDelete}" deleted via tree.`);
+					if (scope === vscode.ConfigurationTarget.Global && userRulesProvider) userRulesProvider.refresh();
+					if (scope === vscode.ConfigurationTarget.Workspace && workspaceRulesProvider) workspaceRulesProvider.refresh();
+				}));
 
 		} catch (error) {
 				console.error("CTK GEE: Error registering commands:", error);
@@ -685,10 +885,19 @@ async function activate(context) {
 								// Always sync, as order might have changed or keys might have been cleaned
 								await syncRules(affectedScope, keyRenames);
 
+								if (affectedScope === vscode.ConfigurationTarget.Global && userRulesProvider) userRulesProvider.refresh();
+								if (affectedScope === vscode.ConfigurationTarget.Workspace && workspaceRulesProvider) workspaceRulesProvider.refresh();
+
 						} else if (event.affectsConfiguration(geminiRulesKey, affectedScope === vscode.ConfigurationTarget.Workspace ? vscode.workspace.workspaceFolders[0].uri : undefined)) {
 								console.log(`CTK GEE: ${geminiRulesKey} changed for ${scopeNameProper}. Reconciling with ctk.ruleSet.`);
 								await reconcileCtkWithExternalGeminiChange(affectedScope);
+								// Reconcile might change ctk.ruleSet and gemini.rules, so refresh
+								if (affectedScope === vscode.ConfigurationTarget.Global && userRulesProvider) userRulesProvider.refresh();
+								if (affectedScope === vscode.ConfigurationTarget.Workspace && workspaceRulesProvider) workspaceRulesProvider.refresh();
 						}
+				}));
+				context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => {
+					if (workspaceRulesProvider) workspaceRulesProvider.refresh(); // Refresh when workspace folders change
 				}));
 				console.log('CTK GEE: Configuration listener registered.');
 		} catch (error) {
