@@ -1,0 +1,124 @@
+{
+  "name": "ctk-gee",
+  "displayName": "CTK GEE (Rule Manager)",
+  "description": "Manages and syncs ctk.ruleSet to geminicodeassist.rules for both User (Global) and Workspace settings.",
+  "publisher": "ctk",
+  "version": "0.0.2",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ctk.addGlobalRule",
+        "title": "Add Global Rule",
+        "category": "CTK GEE"
+      },
+      {
+        "command": "ctk.viewGlobalRules",
+        "title": "View Global Rules",
+        "category": "CTK GEE"
+      },
+      {
+        "command": "ctk.editGlobalRule",
+        "title": "Edit Global Rule",
+        "category": "CTK GEE"
+      },
+      {
+        "command": "ctk.deleteGlobalRule",
+        "title": "Delete Global Rule",
+        "category": "CTK GEE"
+      },
+      {
+        "command": "ctk.forceSyncGlobalRules",
+        "title": "Force Sync Global Rules",
+        "category": "CTK GEE"
+      },
+      {
+        "command": "ctk.addWorkspaceRule",
+        "title": "Add Workspace Rule",
+        "category": "CTK GEE",
+        "when": "workspaceFound"
+      },
+      {
+        "command": "ctk.viewWorkspaceRules",
+        "title": "View Workspace Rules",
+        "category": "CTK GEE",
+        "when": "workspaceFound"
+      },
+      {
+        "command": "ctk.editWorkspaceRule",
+        "title": "Edit Workspace Rule",
+        "category": "CTK GEE",
+        "when": "workspaceFound"
+      },
+      {
+        "command": "ctk.deleteWorkspaceRule",
+        "title": "Delete Workspace Rule",
+        "category": "CTK GEE",
+        "when": "workspaceFound"
+      },
+      {
+        "command": "ctk.forceSyncWorkspaceRules",
+        "title": "Force Sync Workspace Rules",
+        "category": "CTK GEE",
+        "when": "workspaceFound"
+      }
+    ],
+    "activationEvents": [
+      "onStartupFinished"
+    ],
+    "configuration": {
+      "title": "CTK GEE Settings",
+      "properties": {
+        "ctk.ruleSet": {
+          "type": "array",
+          "default": [],
+          "description": "Individual rule key-value pairs for CTK GEE. These are combined to populate 'geminicodeassist.rules' at the corresponding scope (User/Global or Workspace).",
+          "scope": "resource",
+          "items": {
+            "type": "object",
+            "title": "Rule",
+            "properties": {
+              "id": {
+                "type": "number",
+                "description": "Unique ID for the rule within its scope (managed by the extension)."
+              },
+              "key": {
+                "type": "string",
+                "description": "The key for the rule."
+              },
+              "value": {
+                "type": "string",
+                "description": "The value/content of the rule."
+              }
+            },
+            "required": [
+              "id",
+              "key",
+              "value"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "pretest": "npm run lint",
+    "test": "vscode-test",
+    "start:dev": "node ./launch-dev.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/mocha": "^10.0.7",
+    "@types/node": "22.15.21",
+    "eslint": "^9.0.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
