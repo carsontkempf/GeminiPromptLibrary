@@ -456,26 +456,38 @@ class CtkRulesProvider { // implements vscode.TreeDataProvider<RuleTreeItem | Me
 	}
 
 	async getChildren(element) {
-		if (element) {
-			return []; // Rules are leaf nodes
+		if (!element) {
+			// Root level: return the scope-specific root item
+			const rootLabel = this.scopeNameProper; // "User" or "Workspace"
+			const rootItem = new vscode.TreeItem(rootLabel, vscode.TreeItemCollapsibleState.Expanded);
+			// Assign a context value to distinguish this root item if needed for commands/icons
+			rootItem.contextValue = 'ctkScopeRoot';
+			// Optionally, assign an icon
+			// rootItem.iconPath = new vscode.ThemeIcon(this.scope === vscode.ConfigurationTarget.Global ? 'account' : 'folder-opened');
+			return [rootItem];
 		}
 
-		if (this.scope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
-			return [new MessageTreeItem("No workspace open.")];
+		if (element.contextValue === 'ctkScopeRoot') {
+			// Element is one of our scope root items, now fetch its children (the rules)
+			if (this.scope === vscode.ConfigurationTarget.Workspace && !isWorkspaceOpen()) {
+				return [new MessageTreeItem("No workspace open.")];
+			}
+
+			const ctkRules = getCtkRuleSet(this.scope);
+			if (ctkRules.length === 0) {
+				return [new MessageTreeItem(`No ${this.scopeNameProper.toLowerCase()} rules defined. Click '+' to add.`)];
+			}
+
+			const geminiString = await getGeminiRulesStringFromConfig(this.scope);
+			const { valueMap } = parseGeminiRulesString(geminiString);
+
+			return ctkRules.map(rule => {
+				const value = valueMap.get(rule.key) || "";
+				return new RuleTreeItem({ ...rule, value, scope: this.scope }, vscode.TreeItemCollapsibleState.None);
+			}).sort((a, b) => a.ruleSpec.key.localeCompare(b.ruleSpec.key)); // Sort by key for consistent display
 		}
 
-		const ctkRules = getCtkRuleSet(this.scope);
-		if (ctkRules.length === 0) {
-			return [new MessageTreeItem(`No ${this.scopeNameProper.toLowerCase()} rules defined. Click '+' to add.`)];
-		}
-
-		const geminiString = await getGeminiRulesStringFromConfig(this.scope);
-		const { valueMap } = parseGeminiRulesString(geminiString);
-
-		return ctkRules.map(rule => {
-			const value = valueMap.get(rule.key) || "";
-			return new RuleTreeItem({ ...rule, value, scope: this.scope });
-		}).sort((a, b) => a.ruleSpec.key.localeCompare(b.ruleSpec.key)); // Sort by key for consistent display
+		return []; // RuleTreeItems are leaf nodes
 	}
 }
 
@@ -488,6 +500,30 @@ let workspaceRulesProvider;
  */
 async function activate(context) {
 		console.log('CTK GEE: Extension "ctk" is now active!');
+
+		// --- DIAGNOSTIC LOGS FOR WORKSPACE ---
+		if (isWorkspaceOpen()) {
+			console.log("CTK GEE DIAGNOSTIC: Workspace is open.");
+			vscode.workspace.workspaceFolders.forEach((folder, index) => {
+				console.log(`CTK GEE DIAGNOSTIC: Workspace Folder ${index}: Name='${folder.name}', URI='${folder.uri.toString()}', Path='${folder.uri.fsPath}'`);
+			});
+
+			const ctkConfig = vscode.workspace.getConfiguration(CONFIG_SECTION_CTK, vscode.workspace.workspaceFolders[0].uri);
+			const ctkInspect = ctkConfig.inspect(CTK_RULE_SET_KEY);
+			console.log(`CTK GEE DIAGNOSTIC: Inspection of '${CONFIG_SECTION_CTK}.${CTK_RULE_SET_KEY}' for workspace:`, JSON.stringify(ctkInspect, null, 2));
+			if (ctkInspect && ctkInspect.workspaceValue !== undefined) {
+				console.log(`CTK GEE DIAGNOSTIC: ctk.ruleSet (WorkspaceValue):`, ctkInspect.workspaceValue);
+			} else {
+				console.log(`CTK GEE DIAGNOSTIC: ctk.ruleSet (WorkspaceValue) is UNDEFINED.`);
+			}
+
+			const rootConfig = vscode.workspace.getConfiguration(null, vscode.workspace.workspaceFolders[0].uri);
+			const geminiInspect = rootConfig.inspect(GEMINI_CODE_ASSIST_RULES_KEY);
+			console.log(`CTK GEE DIAGNOSTIC: Inspection of '${GEMINI_CODE_ASSIST_RULES_KEY}' for workspace:`, JSON.stringify(geminiInspect, null, 2));
+		} else {
+			console.log("CTK GEE DIAGNOSTIC: No workspace is open according to isWorkspaceOpen().");
+		}
+		// --- END DIAGNOSTIC LOGS ---
 
 		// --- Initialize TreeView Providers ---
 		userRulesProvider = new CtkRulesProvider(vscode.ConfigurationTarget.Global);

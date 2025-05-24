@@ -68,31 +68,31 @@
         "command": "ctk.addWorkspaceRule",
         "title": "Add Workspace Rule",
         "category": "CTK GEE",
-        "when": "workspaceFound"
+        "when": "workspaceFolders"
       },
       {
         "command": "ctk.viewWorkspaceRules",
         "title": "View Workspace Rules",
         "category": "CTK GEE",
-        "when": "workspaceFound"
+        "when": "workspaceFolders"
       },
       {
         "command": "ctk.editWorkspaceRule",
         "title": "Edit Workspace Rule",
         "category": "CTK GEE",
-        "when": "workspaceFound"
+        "when": "workspaceFolders"
       },
       {
         "command": "ctk.deleteWorkspaceRule",
         "title": "Delete Workspace Rule",
         "category": "CTK GEE",
-        "when": "workspaceFound"
+        "when": "workspaceFolders"
       },
       {
         "command": "ctk.forceSyncWorkspaceRules",
         "title": "Force Sync Workspace Rules",
         "category": "CTK GEE",
-        "when": "workspaceFound"
+        "when": "workspaceFolders"
       },
       {
         "command": "ctk.tree.addUserRule",
