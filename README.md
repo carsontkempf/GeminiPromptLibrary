@@ -1,65 +1,58 @@
-# ctk README
+# CTK GEE: Gemini Extension Enhancer
 
-This is the README for your extension "ctk". After writing up a brief description, we recommend including the following sections.
+ ## Features
 
-## Features
+This extension provides a convenient way to manage a collection of rules that guide the behavior of an AI coding assistant.
+*   **Sidebar GUI**: Manage rules (add, edit, delete) for both User (Global) and Workspace settings through dedicated tree views in the VS Code activity bar.
+*   **Add Rule**: Easily add a new key-value rule pair to your collection via the sidebar or command palette for both scopes.
+*   **Edit Rule**: Modify existing key-value rule pairs in your collection via the sidebar or command palette for both scopes.
+*   **Delete Rule**: Remove unwanted key-value rule pairs from your collection via the sidebar or command palette for both scopes.
+*   **View Rules**: Quickly see all currently configured key-value pairs via a command for both scopes.
+*   **Automatic Syncing**: Rules managed in `ctk.ruleSet` (keys and order) are automatically combined with their values (stored in `geminicodeassist.rules`) and synced to the `geminicodeassist.rules` setting.
+*   **Configuration Integrity**: The extension monitors both `ctk.ruleSet` and `geminicodeassist.rules`. If `geminicodeassist.rules` is modified externally, the extension prompts the user on how to reconcile the differences. It also cleans `ctk.ruleSet` to ensure unique IDs and keys.
+*   **Initial Import**: On first activation or if `ctk.ruleSet` is empty, the extension can import existing keys from `geminicodeassist.rules` into `ctk.ruleSet`.
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
 
-For example if there is an image subfolder under your extension project workspace:
 
-\!\[feature X\]\(images/feature-x.png\)
+*   `ctk.ruleSet`:
+    *   Type: `array`
+    *   Scope: User, Workspace
+    *   Items:
+        *   Type: `object`
+        *   Properties:
+            *   `id`:
+                *   Type: `number`
+                *   Description: "A unique identifier for the rule, managed by the extension."
+            *   `key`:
+                *   Type: `string`
+                *   Description: "The key for the rule. Must be unique within its scope."
+    *   Default: `[]`
+    *   Description: "Manages the identifiers and keys for rules. The actual rule *values* are stored and synced with `geminicodeassist.rules`. These are combined by the 'CTK GEE' extension to populate `geminicodeassist.rules`."
+*   `geminicodeassist.rules`:
+    *   Type: `string`
+    *   Scope: User, Workspace
+    *   Default: `""`
+    *   Description: "The combined rules string (e.g., 'key1: value1\\n\\n\\n\\nkey2: value2'), managed by the 'CTK GEE' extension based on 'ctk.ruleSet' and the values from this setting. Direct edits may trigger a reconciliation prompt by 'CTK GEE'."
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+## Commands
 
-## Requirements
+*   `CTK GEE: Add Global/Workspace Rule`: Prompts for a new rule key and value and adds it.
+*   `CTK GEE: Edit Global/Workspace Rule`: Allows selecting and editing an existing rule's key and value.
+*   `CTK GEE: Delete Global/Workspace Rule`: Allows selecting and deleting a rule.
+*   `CTK GEE: View Global/Workspace Rules`: Displays the current rules.
+*   `CTK GEE: Force Sync Global/Workspace Rules`: Manually re-synchronizes `ctk.ruleSet` with `geminicodeassist.rules`.
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+ ## Release Notes
+ 
+### 0.0.1 (Planned - Corresponds to current state)
+ 
+*   Initial release of `ctk-gee`.
+*   Rule management for key-value pairs: Add, Edit, Delete, View rules for Global and Workspace scopes.
+*   Dedicated Tree Views in the sidebar for User (Global) and Workspace rules.
+*   Automatic synchronization between `ctk.ruleSet` (keys, order) and `geminicodeassist.rules` (values).
+*   Initial import of keys from `geminicodeassist.rules` to `ctk.ruleSet`.
+*   Reconciliation mechanism for external changes to `geminicodeassist.rules`.
+*   Integrity checks for `ctk.ruleSet` (unique IDs, unique keys).
+ 
+ ---
 
-## Extension Settings
-
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
-
-## Known Issues
-
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code.  Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux)
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux)
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
