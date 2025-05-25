@@ -1,12 +1,14 @@
 {
   "name": "ctk-gee",
-  "displayName": "CTK GEE (Rule Manager)",
-  "description": "Manages and syncs ctk.ruleSet to geminicodeassist.rules for both User (Global) and Workspace settings.",
+  "displayName": "Gemini Prompt Library",
+  "description": "Manages and syncs prompts to the gemini extension's rules setting.",
   "publisher": "ctk",
+  "repository": "https://github.com/carsontkempf/GeminiPromptLibrary",
   "version": "0.0.2",
   "engines": {
     "vscode": "^1.80.0"
   },
+  "icon": "icons/marketplace-icon.png",
   "categories": [
     "Other"
   ],
