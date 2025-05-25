@@ -423,8 +423,9 @@ class RuleTreeItem extends vscode.TreeItem {
 		super(`${ruleSpec.key}`, collapsibleState);
 		this.ruleSpec = ruleSpec; // Assign to instance property
 
-		const valueSnippet = ruleSpec.value.substring(0, 70);
-		this.description = `${valueSnippet}${ruleSpec.value.length > 70 ? '...' : ''}`;
+		// Remove or comment out the description to hide the value preview
+		// const valueSnippet = ruleSpec.value.substring(0, 70);
+		// this.description = `${valueSnippet}${ruleSpec.value.length > 70 ? '...' : ''}`;
 		this.tooltip = new vscode.MarkdownString(`**Key:** \`${ruleSpec.key}\`\n\n**Value:**\n\`\`\`\n${ruleSpec.value}\n\`\`\``);
 		this.id = `${ruleSpec.scope === vscode.ConfigurationTarget.Global ? 'global' : 'workspace'}-${ruleSpec.id}`; // Unique ID for the tree item
 		this.contextValue = 'ctkRuleItem'; // Used in package.json for menu contributions

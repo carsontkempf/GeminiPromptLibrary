@@ -4,7 +4,8 @@
   "description": "Manages and syncs prompts to the gemini extension's rules setting.",
   "publisher": "ctk",
   "repository": "https://github.com/carsontkempf/GeminiPromptLibrary",
-  "version": "0.0.5",
+  "version": "0.1.1",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.80.0"
   },
