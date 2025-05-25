@@ -3,8 +3,9 @@
  ## Features
 
 
-![](feature-showcase.png)
+![Feature Showcase](./images/feature-showcase.png)
 
+---
 
 ## Commands
 
